@@ -22,10 +22,10 @@ SOCKET sockSrv, sockcli[1024];
 HANDLE hThread[1024], cThread[1024];
 
 DWORD WINAPI client_server(LPVOID lpParamter) {
-    char recvBuf[1505], sendBuf[1505];
-    char username[1024];
-    sprintf(username, "%s", (char *)lpParamter);
+    char recvBuf[1024], username[1024];
+    snprintf(username, sizeof(username), "%s", (char *)lpParamter);
     int id = client[(char *)lpParamter];
+    spdlog::info("Client {} server started,id: {}", username, id);
 
     while (1) {
         memset(recvBuf, 0, sizeof(recvBuf));
@@ -52,7 +52,7 @@ DWORD WINAPI client_server(LPVOID lpParamter) {
 }
 
 DWORD WINAPI connect_client(LPVOID lpParamter) {
-    char recvBuf[1505], sendBuf[1505];
+    char recvBuf[1024], sendBuf[1024];
 
     int id = 0;
     for (int i = strlen((char *)lpParamter) - 1; i >= 0; i--)
@@ -64,8 +64,37 @@ DWORD WINAPI connect_client(LPVOID lpParamter) {
         spdlog::error("One client connect failed with error: {}", WSAGetLastError());
         return false;
     }
-    spdlog::info("Client IP:[{}] connected", inet_ntoa(addrClient[id].sin_addr));
-    hThread[id] = CreateThread(NULL, 0, client_server, (LPVOID)recvBuf, 0, NULL);
+    bool f = 0;
+    do {
+        memset(recvBuf, 0, sizeof(recvBuf));
+        int result = recv(sockcli[id], recvBuf, sizeof(recvBuf), 0);
+        if (result == 0) {
+            spdlog::info("Client IP:[{}] disconnected", inet_ntoa(addrClient[id].sin_addr));
+            closesocket(sockcli[id]);
+            client[(char *)recvBuf] = 0;
+            id_free.insert(id), id_have.erase(id);
+            return false;
+        } else if (result < 0) {
+            spdlog::error("client IP:[{}] recv failed with error: {}", inet_ntoa(addrClient[id].sin_addr), WSAGetLastError());
+            closesocket(sockcli[id]);
+            client[(char *)recvBuf] = 0;
+            id_free.insert(id), id_have.erase(id);
+            return false;
+        } else {
+            client[(char *)recvBuf] = id;
+            sprintf(sendBuf, "Welcome to Paintboar IP:[%s],%s", inet_ntoa(addrClient[id].sin_addr), (char *)recvBuf);
+            spdlog::info("Client IP:[{}] send message: {}", inet_ntoa(addrClient[id].sin_addr), sendBuf);
+            send(sockcli[id], sendBuf, sizeof(sendBuf), 0);
+            break;
+        }
+    } while (1);
+    spdlog::info("Client IP:[{}] connected,id:{}", inet_ntoa(addrClient[id].sin_addr), id);
+    try {
+        hThread[id] = CreateThread(NULL, 0, client_server, (LPVOID)recvBuf, 0, NULL);
+    } catch (...) {
+        spdlog::error("CreateThread failed with error: {}", GetLastError());
+        return false;
+    }
     CloseHandle(hThread[id]);
     id_free.erase(id), id_have.insert(id);
     return 0;
@@ -95,6 +124,7 @@ bool init() {
     }
 
     char hostname[256];
+    gethostname(hostname, 256);
     hostent *temp;
     temp = gethostbyname(hostname);
     for (int i = 0; temp->h_addr_list[i] != NULL && i < 10; i++) {
@@ -111,18 +141,29 @@ bool init() {
     return true;
 }
 
-bool start() {
+DWORD WINAPI thread_server(LPVOID lpParamter) {
     spdlog::info("Starting socket server");
 
     while (1) {
         cnt = *id_free.begin();
-        sockcli[cnt] = accept(sockSrv, (SOCKADDR *)&addrSrv, &len);
-        if (sockcli[cnt] == INVALID_SOCKET) {
+        sockcli[cnt] = accept(sockSrv, (SOCKADDR *)&addrClient[cnt], &len);
+        if (sockcli[cnt] == SOCKET_ERROR) {
             spdlog::error("Accept failed with error: {}", WSAGetLastError());
             return false;
         }
+        char chcnt[1005];
+        sprintf(chcnt, "%d", cnt);
+        cThread[cnt] = CreateThread(NULL, 0, connect_client, (LPVOID)chcnt, 0, NULL);
+        CloseHandle(cThread[cnt]);
         id_free.erase(cnt), id_have.insert(cnt);
     }
+    return 0;
+}
+
+bool start() {
+    hThread[0] = CreateThread(NULL, 0, thread_server, NULL, 0, NULL);
+    CloseHandle(hThread[0]);
+    return true;
 }
 } // namespace SocketServer
 
@@ -309,9 +350,9 @@ int main() {
         if (board.getboard() == false) {
             spdlog::error("Failed to get board, retrying in 10 seconds");
 
-            email.send("your_email_address", "your_email_address", "LSPaintBoard Error", "Failed to get board, retrying in 10 seconds");
+            // email.send("your_email_address", "your_email_address", "LSPaintBoard Error", "Failed to get board, retrying in 10 seconds");
 
-            std::this_thread::sleep_for(std::chrono::seconds(10));
+            std::this_thread::sleep_for(std::chrono::seconds(100));
             continue;
         }
     }
