@@ -5,13 +5,13 @@ import websocket
 import re
 import struct
 import time
-import asyncio
 
 
 class Socket_server:
     server_ip = ''
     port = 0
     server_name = ""
+    client_socket = None
 
     def __init__(self, server_ip, port, server_name):
         self.server_ip = server_ip
@@ -26,17 +26,17 @@ class Socket_server:
                 f"socket server is starting,listening on {self.server_ip}:{self.port}")
 
             while True:
-                client_socket, client_address = server_socket.accept()
-                client_socket.sendall(server_name.encode('utf-8'))
-                data = client_socket.recv(1024)
+                self.client_socket, client_address = server_socket.accept()
+                self.client_socket.sendall(server_name.encode('utf-8'))
+                data = self.client_socket.recv(1024)
                 client_name = data.decode('utf-8')
-                client_socket.sendall(
+                self.client_socket.sendall(
                     (f"Welcome to the {server_name}!").encode('utf-8'))
                 logging.info(f"Client[{client_name}] connected")
 
-                with client_socket:
+                with self.client_socket:
                     while True:
-                        data = client_socket.recv(1024).decode('utf-8')
+                        data = self.client_socket.recv(1024).decode('utf-8')
                         if not data:
                             break
                         logging.debug(
@@ -50,38 +50,16 @@ class Socket_server:
                         b = int(b)
 
                         paint.paint(uid, token, r, g, b, x, y)
+    
+    def send_message(self, message):
+        self.client_socket.sendall(message.encode('utf-8'))
+        logging.debug(f"Sent message to client: {message}")
                         
-
-class Socket_client:
-    server_ip = ''
-    port = 0
-    client_name = ""
-    client_socket = None
-
-    def __init__(self, server_ip, port, client_name):
-        self.server_ip = server_ip
-        self.port = port
-        self.client_name = client_name
-
-    def start_client(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as self.client_socket:
-            self.client_socket.connect((self.server_ip, self.port))
-            self.client_socket.sendall(self.client_name.encode('utf-8'))
-            data = self.client_socket.recv(1024)
-            server_name = data.decode('utf-8')
-            logging.info(f"Connected to server[{server_name}]")
-            self.client_socket.sendall(self.client_name.encode('utf-8'))
-            data = self.client_socket.recv(1024)
-            logging.debug(f"Received data from server: {data.decode('utf-8')}")
-
-    def send_data(self, data):
-        self.client_socket.sendall(data.encode('utf-8'))
-        logging.debug(f"Sent data to server: {data}")
-
 
 class Paint:
     ws = None
     connected = False
+    status = []
     def on_message(self, status, event):
         offset = 0
         while(offset < len(event)):
@@ -102,7 +80,8 @@ class Paint:
             elif type == 0xff:
                 id = struct.unpack_from('<I', event, offset)[0]
                 code = struct.unpack_from('B', event, offset+4)[0]
-                logging.info(f"painting finished,id:{id},code:{hex(code)}")
+                logging.debug(f"painting finished,id:{id},code:{hex(code)}")
+                socket_server.send_message(f"{status[id]} {code}")
                 offset += 5
             else:
                 logging.warning(f"Unknown event type: {type}")
@@ -181,6 +160,7 @@ class Paint:
             *tokenBytes,
             *self.uintToUint8Array(id, 4)
         ])
+        self.status[id]=uid
 
         self.append_data(paintData)
 

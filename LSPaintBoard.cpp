@@ -3,198 +3,34 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ios>
+#include <iostream>
+#include <minwindef.h>
 #include <psdk_inc/_socket_types.h>
+#include <set>
 #include <string>
-#include "cpr/cpr.h"
-#include "spdlog/spdlog.h"
+#include <cpr/cpr.h>
+#include <nlohmann/json.hpp>
 #include <vector>
 #include <curl/curl.h>
+#include "spdlog/spdlog.h"
 #include "winsock2.h"
 
-namespace SocketServer {
-int port;
-WSADATA wsaData;
-SOCKADDR_IN addrSrv, addrClient[1024];
-std::string ip[1024], username[1024];
-int ic = -1, cnt = 1, len;
-std::set<int> id_free, id_have;
-std::map<std::string, int> client;
-SOCKET sockSrv, sockcli[1024];
-HANDLE hThread[1024], cThread[1024];
-std::mutex mtx;
+using json = nlohmann::json;
 
-DWORD WINAPI client_server(LPVOID lpParamter) {
-    if (lpParamter == nullptr) {
-        spdlog::error("lpParamter is nullptr");
-        return 1;
-    }
+struct color {
+    uint8_t r, g, b;
+};
 
-    char recvBuf[1024];
-
-    int id = client[(char *)lpParamter];
-
-    spdlog::info("Client[{}] server started, id: {}", username[id], id);
-
-    while (1) {
-        memset(recvBuf, 0, sizeof(recvBuf));
-
-        int result = recv(sockcli[id], recvBuf, sizeof(recvBuf), 0);
-        if (result == 0) {
-            spdlog::info("Client[{}] disconnected", username[id]);
-            closesocket(sockcli[id]);
-            sockcli[id] = INVALID_SOCKET;
-            client[(char *)lpParamter] = 0;
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                id_free.insert(id), id_have.erase(id);
-            }
-            break;
-        } else if (result == SOCKET_ERROR) {
-            int error = WSAGetLastError();
-            spdlog::error("Recv failed with error: {}", error);
-            if (error == WSAEWOULDBLOCK) {
-                continue;
-            } else {
-                closesocket(sockcli[id]);
-                sockcli[id] = INVALID_SOCKET;
-                client[(char *)lpParamter] = 0;
-                {
-                    std::lock_guard<std::mutex> lock(mtx);
-                    id_free.insert(id), id_have.erase(id);
-                }
-                break;
-            }
-        } else {
-            spdlog::debug("Received message from {}: {}", username[id], recvBuf);
-        }
-    }
-    spdlog::info("Client[{}] server stopped", username[id]);
-    return 0;
-}
-
-DWORD WINAPI connect_client(LPVOID lpParamter) {
-    char recvBuf[1024], sendBuf[1024];
-
-    int id = 0;
-    for (int i = strlen((char *)lpParamter) - 1; i >= 0; i--)
-        id = id * 10 + ((char *)lpParamter)[i] - '0';
-
-    sprintf(sendBuf, "LSPaintboard");
-    int iSend = send(sockcli[id], sendBuf, strlen(sendBuf), 0);
-    if (iSend == SOCKET_ERROR) {
-        spdlog::error("One client connect failed with error: {}", WSAGetLastError());
-        return false;
-    }
-    bool f = 0;
-    do {
-        memset(recvBuf, 0, sizeof(recvBuf));
-        int result = recv(sockcli[id], recvBuf, sizeof(recvBuf), 0);
-        if (result == 0) {
-            spdlog::info("Client[{}] disconnected", inet_ntoa(addrClient[id].sin_addr));
-            closesocket(sockcli[id]);
-            client[(char *)recvBuf] = 0;
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                id_free.insert(id), id_have.erase(id);
-            }
-            return false;
-        } else if (result < 0) {
-            spdlog::error("Client[{}] recv failed with error: {}", inet_ntoa(addrClient[id].sin_addr), WSAGetLastError());
-            closesocket(sockcli[id]);
-            client[(char *)recvBuf] = 0;
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                id_free.insert(id), id_have.erase(id);
-            }
-            return false;
-        } else {
-            client[(char *)recvBuf] = id;
-            sprintf(sendBuf, "Welcome to LSPaintboard IP:[%s],%s", inet_ntoa(addrClient[id].sin_addr), (char *)recvBuf);
-            spdlog::debug("Send message to client[{}]: {}", (char *)recvBuf, sendBuf);
-            send(sockcli[id], sendBuf, strlen(sendBuf), 0);
-            break;
-        }
-    } while (1);
-    spdlog::info("Client IP:[{}] connected,id: {},username: {}", inet_ntoa(addrClient[id].sin_addr), id, (char *)recvBuf);
-    username[id] = (char *)recvBuf;
-    hThread[id] = CreateThread(NULL, 0, client_server, (LPVOID)(username[id].c_str()), 0, NULL);
-    CloseHandle(hThread[id]);
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        id_free.erase(id), id_have.insert(id);
-    }
-    return 0;
-}
-
-bool init() {
-    spdlog::info("Initializing socket server");
-
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        spdlog::error("WSAStartup failed with error: {}", WSAGetLastError());
-        return false;
-    }
-
-    sockSrv = socket(AF_INET, SOCK_STREAM, 0);
-    addrSrv.sin_family = AF_INET;
-    addrSrv.sin_port = htons(port);
-    addrSrv.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
-    int retVal = bind(sockSrv, (LPSOCKADDR)&addrSrv, sizeof(SOCKADDR_IN));
-    if (retVal == SOCKET_ERROR) {
-        spdlog::error("Bind failed with error: {}", WSAGetLastError());
-        return false;
-    }
-
-    if (listen(sockSrv, 10) == SOCKET_ERROR) {
-        spdlog::error("Listen failed with error: {}", WSAGetLastError());
-        return false;
-    }
-
-    char hostname[256];
-    gethostname(hostname, 256);
-    hostent *temp;
-    temp = gethostbyname(hostname);
-    for (int i = 0; temp->h_addr_list[i] != NULL && i < 10; i++) {
-        ip[i] = inet_ntoa(*(struct in_addr *)temp->h_addr_list[i]);
-        ic++;
-    }
-
-    len = sizeof(SOCKADDR);
-    for (int i = 1; i <= 1000; i++) id_free.insert(i);
-    client.clear();
-
-    spdlog::info("Socket server initialized, listening on ip: {}, port: {}", ip[ic], port);
-
-    return true;
-}
-
-DWORD WINAPI thread_server(LPVOID lpParamter) {
-    spdlog::info("Starting socket server");
-
-    while (1) {
-        cnt = *id_free.begin();
-        sockcli[cnt] = accept(sockSrv, (SOCKADDR *)&addrClient[cnt], &len);
-        if (sockcli[cnt] == SOCKET_ERROR) {
-            spdlog::error("Accept failed with error: {}", WSAGetLastError());
-            return false;
-        }
-        char chcnt[1005];
-        sprintf(chcnt, "%d", cnt);
-        cThread[cnt] = CreateThread(NULL, 0, connect_client, (LPVOID)chcnt, 0, NULL);
-        CloseHandle(cThread[cnt]);
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            id_free.erase(cnt), id_have.insert(cnt);
-        }
-    }
-    return 0;
-}
-
-bool start() {
-    hThread[0] = CreateThread(NULL, 0, thread_server, NULL, 0, NULL);
-    CloseHandle(hThread[0]);
-    return true;
-}
-} // namespace SocketServer
+int socket_port = 4500;
+std::string socket_server;
+std::string smtp_server, smtp_port, username, password, to_address;
+std::string img_file, token_file;
+std::vector<std::pair<int, std::string>> tokens;
+std::vector<std::vector<color>> img;
+int token_total = 0;
+std::map<int, int> uid_token_map;
+std::set<int> free_tokens;
 
 namespace SocketClient {
 std::string ip, username, servername;
@@ -214,6 +50,19 @@ bool init(const std::string &ip, int port, const std::string &username) {
     return true;
 }
 
+std::string intToHex(int number) {
+    std::stringstream ss;
+    ss << std::hex << number;
+    return ss.str();
+}
+
+DWORD WINAPI token_clock(LPVOID lpParam) {
+    int token_id = std::stoi(std::string((char *)lpParam));
+    std::this_thread::sleep_for(std::chrono::seconds(30));
+    free_tokens.insert(token_id);
+    return 0;
+}
+
 DWORD WINAPI message_server(LPVOID lpParam) {
     while (1) {
         memset(recvbuf, 0, sizeof(recvbuf));
@@ -224,9 +73,26 @@ DWORD WINAPI message_server(LPVOID lpParam) {
             closesocket(sockClient);
             // WSACleanup();
             break;
-        } else if (result > 0)
+        } else if (result > 0) {
             spdlog::debug("Received message from server[{}]: {}", servername, recvbuf);
-        else {
+            std::string str(recvbuf);
+            int uid = std::stoi(str.substr(0, str.find(" "))), token_id = uid_token_map[uid];
+            int status = std::stoi(str.substr(str.find(" ") + 1));
+            if (status == 0xed) {
+                spdlog::warn("Token[{}] is unavailable, removing from list", uid);
+                free_tokens.erase(token_id);
+                uid_token_map.erase(uid);
+                token_total--;
+            } else if (status == 0xee) {
+                continue;
+            } else if (status == 0xef) {
+                free_tokens.erase(token_id);
+                CreateThread(NULL, 0, token_clock, (LPVOID)std::to_string(token_id).c_str(), 0, NULL);
+            } else {
+                std::string hexStr = intToHex(status);
+                spdlog::warn("status code from uid[{}]: {}", uid, hexStr);
+            }
+        } else {
             spdlog::error("Recv failed with error: {}", WSAGetLastError());
             server_status = false;
             closesocket(sockClient);
@@ -448,27 +314,94 @@ struct GetBoard {
     }
 };
 
+void get_token() {
+    std::ifstream f(token_file);
+    while (!f.eof()) {
+        int uid;
+        std::string token;
+        f >> uid >> token;
+        tokens.push_back(std::make_pair(uid, token));
+        free_tokens.insert(tokens.size() - 1);
+        uid_token_map[uid] = tokens.size() - 1;
+    }
+    token_total = tokens.size();
+    f.close();
+    spdlog::info("Read tokens from {},total: {}", token_file, tokens.size());
+}
+
+void get_image() {
+    std::ifstream f(img_file);
+    int height, width;
+    f >> height >> width;
+    img.resize(height);
+    for (int i = 0; i < height; i++) {
+        img[i].resize(width);
+    }
+    while (!f.eof()) {
+        int y, x;
+        uint8_t r, g, b;
+        f >> y >> x >> r >> g >> b;
+        img[y][x] = {r, g, b};
+    }
+    f.close();
+    spdlog::info("Read image from {}", img_file);
+}
+
+void init() {
+    std::ifstream f("config.json");
+
+    json data = json::parse(f);
+    f.close();
+
+    spdlog::info("Read config.json");
+
+    smtp_server = data["email"]["server"].get<std::string>();
+    smtp_port = data["email"]["port"].get<int>();
+    username = data["email"]["username"].get<std::string>();
+    password = data["email"]["password"].get<std::string>();
+    to_address = data["email"]["to"].get<std::string>();
+    if (data["socket"]["port"] != nullptr && data["socket"]["port"].is_number())
+        socket_port = data["socket"]["port"].get<int>();
+    socket_server = data["socket"]["server"].get<std::string>();
+    img_file = data["paint"]["img_file"].get<std::string>();
+    token_file = data["paint"]["token_file"].get<std::string>();
+
+    get_token();
+    get_image();
+
+    spdlog::info("Ininitialized");
+}
+
+void tokens_check() {
+    for (int i = 0; i < tokens.size(); i++) {
+        std::string msg = std::to_string(tokens[i].first) + " " + tokens[i].second + "0 0 0 0 0";
+        SocketClient::sendmsg(msg);
+    }
+    spdlog::info("Checked tokens, total: {}", tokens.size());
+}
+
 GetBoard board;
-Email email("smtp.gmail.com", "587", "your_email_address", "your_email_password");
+Email email(smtp_server, smtp_port, username, password);
 
 int main() {
     spdlog::set_level(spdlog::level::debug);
 
     spdlog::info("LSPaintBoard started");
 
-    SocketClient::init("10.0.3.113", 4500, "LSPaintBoard");
+    init();
+
+    SocketClient::init(socket_server, socket_port, "LSPaintBoard");
     SocketClient::connect();
 
     while (true) {
-        // if (board.getboard() == false) {
-        //     spdlog::error("Failed to get board, retrying in 10 seconds");
-
-        //     // email.send("your_email_address", "your_email_address", "LSPaintBoard Error", "Failed to get board, retrying in 10 seconds");
-
-        //     std::this_thread::sleep_for(std::chrono::seconds(100));
-        //     continue;
-        // }
-        // board.saveimage_rgb("board_rgb.txt");
-        std::this_thread::sleep_for(std::chrono::seconds(100));
+        if (board.getboard() == false) {
+            spdlog::error("Failed to get board, retrying in 10 seconds");
+            // email.send(to_address, to_address, "LSPaintBoard Error", "Failed to get board, retrying in 10 seconds");
+            std::this_thread::sleep_for(std::chrono::seconds(10));
+            continue;
+        }
+        while (free_tokens.empty());
+        for (int i = 0; i < token_total; i++)
+            printf("%d %s\n", tokens[i].first, tokens[i].second.c_str());
     }
 }
