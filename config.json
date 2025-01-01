@@ -1,0 +1,11 @@
+{
+    "socket": {
+        "port": 4500
+    },
+    "email": {
+        "server": "",
+        "port": "",
+        "username": "",
+        "password": ""
+    }
+}

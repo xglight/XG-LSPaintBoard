@@ -1,2 +1,6 @@
 build
 .cache
+.vscode
+*.txt
+getboard
+python/output_image.png
