@@ -1,17 +1,17 @@
 {
     "socket": {
         "server": "10.0.3.113",
-        "port": 4500
+        "port": 4760
     },
     "email": {
         "server": ".",
         "port": 0,
         "username": ".",
         "password": ".",
-        "to_address": "."
+        "to": "."
     },
     "paint": {
-        "img_file": "board_rgb.txt",
+        "img_file": "img.txt",
         "token_file": "token.txt"
     }
 }

@@ -1,8 +1,10 @@
 build
 .cache
 .vscode
+.venv
 *.txt
 getboard
 python/output_image.png
 config.json
 python/head.rgb
+dist

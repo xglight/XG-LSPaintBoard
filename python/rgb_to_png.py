@@ -1,30 +1,106 @@
 from PIL import Image
+import sys
+import logging
+import colorlog
 
-rbg_file = "board_rgb.txt"
+def get_logger(level=logging.INFO):
+    # 创建logger对象
+    logger = logging.getLogger()
+    logging.basicConfig(level=logging.DEBUG,
+                        format='%(asctime)s - %(levelname)s: %(message)s')
+    logger.setLevel(level)
+    # 创建控制台日志处理器
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(level)
+    # 定义颜色输出格式
+    color_formatter = colorlog.ColoredFormatter(
+        '[%(asctime)s] [%(log_color)s%(levelname)s%(reset)s] %(message)s',
+        log_colors={
+            'DEBUG': 'cyan',
+            'INFO': 'green',
+            'WARNING': 'yellow',
+            'ERROR': 'red',
+            'CRITICAL': 'red,bg_white',
+        }
+    )
+    # 将颜色输出格式添加到控制台日志处理器
+    console_handler.setFormatter(color_formatter)
+    # 移除默认的handler
+    for handler in logger.handlers:
+        logger.removeHandler(handler)
+    # 将控制台日志处理器添加到logger对象
+    logger.addHandler(console_handler)
+    return logger
 
-# 读入图片的宽度和高度
-with open(rbg_file, 'r') as f:
-    height, width = map(int, f.readline().split())
+rbg_file = "board.rgb"
 
-# 读入 RGB 值
-rgb_values = []
-with open(rbg_file, 'r') as f:
-    f.readline()  # 跳过第一行
-    # 一行五个值，前两个代表坐标，后三代表 RGB 值
-    for line in f:
-        y, x, r, g, b = map(int, line.split())
-        rgb_values.append((x, y, (r, g, b)))
+def rgb_to_png(rbg_file,output_file='board.png'):
+    try:
+        with open(rbg_file, 'r') as f:
+            try:
+                width, height = map(int, f.readline().split())
+            except ValueError:
+                logging.error("Invalid file format: {}".format(rbg_file))
+                exit(1)
+            except Exception as e:
+                logging.error("Unexpected error: {}".format(e))
+    except FileNotFoundError:
+        logging.error("File not found: {}".format(rbg_file))
+        exit(1)
+    except ValueError:
+        logging.error("Invalid file format: {}".format(rbg_file))
+        exit(1)
+    except Exception as e:
+        logging.error("Unexpected error: {}".format(e))
 
-# 创建一个新的图片对象
-image = Image.new('RGB', (width, height))
+    rgb_values = []
 
-# 填充颜色
-for x, y, (r, g, b) in rgb_values:
-    image.putpixel((x, y), (r, g, b))
+    with open(rbg_file, 'r') as f:
+        f.readline()  
+        for line in f:
+            try:
+                y, x, r, g, b = map(int, line.split())
+            except ValueError:
+                logging.error("Invalid file format: {}".format(rbg_file))
+                exit(1)
+            except Exception as e:
+                logging.error("Unexpected error: {}".format(e))
+            rgb_values.append((x, y, (r, g, b)))
+
+    image = Image.new('RGB', (width, height))
+
+    for x, y, (r, g, b) in rgb_values:
+        image.putpixel((x, y), (r, g, b))
+    
+    try:
+        image.save(output_file)
+    except Exception as e:
+        logging.error("Unexpected error: {}".format(e))
+
+if __name__ == '__main__':
+    output_file = ""
+
+    logging = get_logger()
+    logging.info("Start converting RGB file to PNG file...")
+    
+    if len(sys.argv) == 2:
+        rbg_file = sys.argv[1]
+        rgb_to_png(rbg_file)
+        logging.info("RGB file: {}".format(rbg_file))
+    else:
+        logging.error("Please specify the RGB file path")
+        exit(1)
+    
+    if len(sys.argv) == 3:
+        output_file = sys.argv[2]
+        rgb_to_png(rbg_file,output_file)
+        logging.info("Output file: {}".format(output_file))
+    else:
+        output_file = "board.png"
+        logging.info("Output file: board.png")
+    
+    rgb_to_png(rbg_file,output_file)
+
+    logging.info("Finish converting")
     
 
-# 保存图片
-image.save('board.png')
-
-# 显示图片
-# image.show()

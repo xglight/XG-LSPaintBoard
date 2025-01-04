@@ -1,12 +1,11 @@
-#include <cpr/cprtypes.h>
-#include <cpr/timeout.h>
+#include <chrono>
+#include <thread>
+#include <regex>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <ios>
 #include <iostream>
-#include <minwindef.h>
-#include <psdk_inc/_socket_types.h>
 #include <set>
 #include <string>
 #include <cpr/cpr.h>
@@ -32,133 +31,128 @@ int token_total = 0;
 std::map<int, int> uid_token_map;
 std::set<int> free_tokens;
 
-namespace SocketClient {
-std::string ip, username, servername;
-bool server_status = false;
-int port;
-char recvbuf[1024];
-WSADATA wsaData;
-SOCKADDR_IN addrSrv;
-SOCKET sockClient;
-HANDLE hThread;
+struct SocketClient {
+    std::string ip, username, servername;
+    bool server_status = false;
+    int port, id;
+    char recvbuf[1024];
+    WSADATA wsaData;
+    SOCKADDR_IN addrSrv;
+    SOCKET sockClient;
+    HANDLE hThread;
 
-bool init(const std::string &ip, int port, const std::string &username) {
-    SocketClient::ip = ip;
-    SocketClient::port = port;
-    SocketClient::username = username;
+    bool init(const std::string &_ip, int _port, const std::string &_username, int _id) {
+        ip = _ip, port = _port, username = _username, id = _id;
+        return true;
+    }
 
-    return true;
-}
+    std::string intToHex(int number) {
+        std::stringstream ss;
+        ss << std::hex << number;
+        return "0x" + ss.str();
+    }
 
-std::string intToHex(int number) {
-    std::stringstream ss;
-    ss << std::hex << number;
-    return ss.str();
-}
+    void token_clock(int token_id) {
+        std::this_thread::sleep_for(std::chrono::seconds(30));
+        free_tokens.insert(token_id);
+        return;
+    }
 
-DWORD WINAPI token_clock(LPVOID lpParam) {
-    int token_id = std::stoi(std::string((char *)lpParam));
-    std::this_thread::sleep_for(std::chrono::seconds(30));
-    free_tokens.insert(token_id);
-    return 0;
-}
-
-DWORD WINAPI message_server(LPVOID lpParam) {
-    while (1) {
-        memset(recvbuf, 0, sizeof(recvbuf));
-        int result = recv(sockClient, recvbuf, sizeof(recvbuf), 0);
-        if (result == 0) {
-            spdlog::info("Server[{}] disconnected", servername);
-            server_status = false;
-            closesocket(sockClient);
-            // WSACleanup();
-            break;
-        } else if (result > 0) {
-            spdlog::debug("Received message from server[{}]: {}", servername, recvbuf);
-            std::string str(recvbuf);
-            int uid = std::stoi(str.substr(0, str.find(" "))), token_id = uid_token_map[uid];
-            int status = std::stoi(str.substr(str.find(" ") + 1));
-            if (status == 0xed) {
-                spdlog::warn("Token[{}] is unavailable, removing from list", uid);
-                free_tokens.erase(token_id);
-                uid_token_map.erase(uid);
-                token_total--;
-            } else if (status == 0xee) {
-                continue;
-            } else if (status == 0xef) {
-                free_tokens.erase(token_id);
-                CreateThread(NULL, 0, token_clock, (LPVOID)std::to_string(token_id).c_str(), 0, NULL);
+    void message_server() {
+        while (1) {
+            memset(recvbuf, 0, sizeof(recvbuf));
+            int result = recv(sockClient, recvbuf, sizeof(recvbuf), 0);
+            if (result == 0) {
+                spdlog::info("id:[{}] - Server[{}] disconnected", id, servername);
+                server_status = false;
+                closesocket(sockClient);
+                // WSACleanup();
+                break;
+            } else if (result > 0) {
+                spdlog::debug("id:[{}] - Received message from server[{}]: {}", id, servername, recvbuf);
+                std::string str(recvbuf);
+                int uid = std::stoi(str.substr(0, str.find(" "))), token_id = uid_token_map[uid];
+                int status = std::stoi(str.substr(str.find(" ") + 1));
+                if (status == 0xed) {
+                    spdlog::warn("Token[{}] is unavailable, removing from list", uid);
+                    free_tokens.erase(token_id);
+                    uid_token_map.erase(uid);
+                    token_total--;
+                } else if (status == 0xee) {
+                    continue;
+                } else if (status == 0xef) {
+                    free_tokens.erase(token_id);
+                    std::thread t([this, token_id]() { this->token_clock(token_id); });
+                    t.detach();
+                } else {
+                    std::string hexStr = intToHex(status);
+                    spdlog::warn("status code from uid[{}]: {}", uid, hexStr);
+                }
             } else {
-                std::string hexStr = intToHex(status);
-                spdlog::warn("status code from uid[{}]: {}", uid, hexStr);
+                spdlog::error("id:[{}] - Recv failed with error: {}", id, WSAGetLastError());
+                server_status = false;
+                closesocket(sockClient);
+                break;
             }
-        } else {
-            spdlog::error("Recv failed with error: {}", WSAGetLastError());
-            server_status = false;
-            closesocket(sockClient);
-            break;
         }
     }
-    return 0;
-}
 
-bool connect() {
-    spdlog::info("Connecting to server[{}], username: {}", ip, username);
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        spdlog::error("WSAStartup failed with error: {}", WSAGetLastError());
-        return 0;
+    bool connect_server() {
+        spdlog::info("id:[{}] - Connecting to server[{}], username: {}", id, ip, username);
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+            spdlog::error("WSAStartup failed with error: {}", WSAGetLastError());
+            return 0;
+        }
+
+        addrSrv.sin_family = AF_INET;
+        addrSrv.sin_port = htons(port);
+        addrSrv.sin_addr.S_un.S_addr = inet_addr(ip.c_str());
+
+        sockClient = socket(AF_INET, SOCK_STREAM, 0);
+
+        if (SOCKET_ERROR == sockClient) {
+            spdlog::error("id:[{}] - Failed to create socket, error: {}", id, WSAGetLastError());
+            return 0;
+        }
+        if (connect(sockClient, (struct sockaddr *)&addrSrv, sizeof(addrSrv)) == INVALID_SOCKET) {
+            spdlog::error("id:[{}] - Failed to connect to server, error: {}", id, WSAGetLastError());
+            return 0;
+        } else {
+            recv(sockClient, recvbuf, sizeof(recvbuf), 0);
+            servername = recvbuf;
+            spdlog::debug("id:[{}] - Received message from server[{}],IP:[{}]: {}", id, servername, ip, recvbuf);
+            spdlog::info("id:[{}] - Connected to server[{}], username: {}", id, servername, username);
+        }
+
+        server_status = true;
+
+        do {
+            send(sockClient, username.c_str(), username.size(), 0);
+            recv(sockClient, recvbuf, sizeof(recvbuf), 0);
+            spdlog::debug("id:[{}] - Received message from server[{}]: {}", id, servername, recvbuf);
+            break;
+        } while (1);
+
+        std::thread t([this]() { this->message_server(); });
+        t.detach();
+
+        return 1;
     }
 
-    addrSrv.sin_family = AF_INET;
-    addrSrv.sin_port = htons(port);
-    addrSrv.sin_addr.S_un.S_addr = inet_addr(ip.c_str());
-
-    sockClient = socket(AF_INET, SOCK_STREAM, 0);
-
-    if (SOCKET_ERROR == sockClient) {
-        spdlog::error("Failed to create socket, error: {}", WSAGetLastError());
-        return 0;
+    bool sendmsg(std::string msg) {
+        if (server_status == false) {
+            spdlog::error("id:[{}] - Server is not connected, cannot send message", id);
+            return false;
+        }
+        int iSend = send(sockClient, msg.c_str(), msg.size(), 0);
+        if (iSend == SOCKET_ERROR) {
+            spdlog::error("id:[{}] - Send failed with error: {}", id, WSAGetLastError());
+            return false;
+        }
+        spdlog::debug("id:[{}] - Sent message to server[{}]: {}", id, servername, msg);
+        return true;
     }
-    if (connect(sockClient, (struct sockaddr *)&addrSrv, sizeof(addrSrv)) == INVALID_SOCKET) {
-        spdlog::error("Failed to connect to server, error: {}", WSAGetLastError());
-        return 0;
-    } else {
-        recv(sockClient, recvbuf, sizeof(recvbuf), 0);
-        servername = recvbuf;
-        spdlog::debug("Received message from server[{}],IP:[{}]: {}", servername, ip, recvbuf);
-        spdlog::info("Connected to server[{}], username: {}", servername, username);
-    }
-
-    server_status = true;
-
-    do {
-        send(sockClient, username.c_str(), username.size(), 0);
-        recv(sockClient, recvbuf, sizeof(recvbuf), 0);
-        spdlog::debug("Received message from server[{}]: {}", servername, recvbuf);
-        break;
-    } while (1);
-
-    hThread = CreateThread(NULL, 0, message_server, NULL, 0, NULL);
-    CloseHandle(hThread);
-
-    return 1;
-}
-
-bool sendmsg(std::string msg) {
-    if (server_status == false) {
-        spdlog::error("Server is not connected, cannot send message");
-        return false;
-    }
-    int iSend = send(sockClient, msg.c_str(), msg.size(), 0);
-    if (iSend == SOCKET_ERROR) {
-        spdlog::error("Send failed with error: {}", WSAGetLastError());
-        return false;
-    }
-    spdlog::debug("Sent message to server[{}]: {}", servername, msg);
-    return true;
-}
-
-} // namespace SocketClient
+} client[7];
 
 struct Email {
     std::string smtp_server, smtp_port, username, password;
@@ -314,8 +308,66 @@ struct GetBoard {
     }
 };
 
+struct Paint {
+    struct data {
+        int uid;
+        std::string token;
+        int r, g, b, x, y;
+    };
+
+    std::vector<data> chunks[7];
+
+    void init() {
+        for (int i = 0; i < 7; i++) chunks[i].clear();
+        std::thread t([this]() { this->send_data(); });
+        t.detach();
+    }
+
+    std::string get_merge_data(std::vector<data> &chunk) {
+        std::string result = "";
+
+        for (int i = 0; i < chunk.size(); i++) {
+            data d = chunk[i];
+            result += std::to_string(d.uid) + " " + d.token + " " + std::to_string(d.r) + " " + std::to_string(d.g) + " " + std::to_string(d.b) + " " + std::to_string(d.x) + " " + std::to_string(d.y) + ",";
+        }
+        chunk.clear();
+
+        return result;
+    }
+
+    void paint(int f, int uid, std::string token, int x, int y, int r, int g, int b) {
+        spdlog::debug("Painting ({},{},{}) at ({},{}),uid: {},token: {}", r, g, b, x, y, uid, token);
+        chunks[f].push_back({uid, token, r, g, b, x, y});
+    }
+
+    void send_data() {
+        while (1) {
+            for (int i = 0; i < 7; i++)
+                if (!chunks[i].empty() && client[i].server_status == true)
+                    client[i].sendmsg(get_merge_data(chunks[i]));
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+    }
+
+} paint;
+
+void tokens_check() {
+    for (int i = 0; i < tokens.size(); i++) {
+        paint.paint(0, tokens[i].first, tokens[i].second, 0, 0, 0, 0, 0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    spdlog::info("Checked tokens, total: {}", token_total);
+    return;
+}
+
 void get_token() {
     std::ifstream f(token_file);
+    if (f.fail()) {
+        spdlog::error("Failed to open file: {}", token_file);
+        return;
+    }
+    tokens.clear();
     while (!f.eof()) {
         int uid;
         std::string token;
@@ -327,10 +379,16 @@ void get_token() {
     token_total = tokens.size();
     f.close();
     spdlog::info("Read tokens from {},total: {}", token_file, tokens.size());
+    tokens_check();
+    return;
 }
 
 void get_image() {
     std::ifstream f(img_file);
+    if (f.fail()) {
+        spdlog::error("Failed to open file: {}", img_file);
+        return;
+    }
     int height, width;
     f >> height >> width;
     img.resize(height);
@@ -347,9 +405,19 @@ void get_image() {
     spdlog::info("Read image from {}", img_file);
 }
 
-void init() {
-    std::ifstream f("config.json");
+void init_client() {
+    client[0].init(socket_server, socket_port, "LSPaintBoard", 0);
+    client[0].connect_server();
+}
 
+void init() {
+    system("start LSPaint.exe");
+
+    std::ifstream f("config.json");
+    if (f.fail()) {
+        spdlog::error("Failed to open file: config.json");
+        return;
+    }
     json data = json::parse(f);
     f.close();
 
@@ -366,18 +434,13 @@ void init() {
     img_file = data["paint"]["img_file"].get<std::string>();
     token_file = data["paint"]["token_file"].get<std::string>();
 
+    init_client();
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    paint.init();
     get_token();
     get_image();
 
     spdlog::info("Ininitialized");
-}
-
-void tokens_check() {
-    for (int i = 0; i < tokens.size(); i++) {
-        std::string msg = std::to_string(tokens[i].first) + " " + tokens[i].second + "0 0 0 0 0";
-        SocketClient::sendmsg(msg);
-    }
-    spdlog::info("Checked tokens, total: {}", tokens.size());
 }
 
 GetBoard board;
@@ -390,9 +453,6 @@ int main() {
 
     init();
 
-    SocketClient::init(socket_server, socket_port, "LSPaintBoard");
-    SocketClient::connect();
-
     while (true) {
         if (board.getboard() == false) {
             spdlog::error("Failed to get board, retrying in 10 seconds");
@@ -403,5 +463,7 @@ int main() {
         while (free_tokens.empty());
         for (int i = 0; i < token_total; i++)
             printf("%d %s\n", tokens[i].first, tokens[i].second.c_str());
+
+        std::this_thread::sleep_for(std::chrono::seconds(100));
     }
 }
