@@ -41,15 +41,15 @@ def rgb_to_png(rbg_file,output_file='board.png'):
                 width, height = map(int, f.readline().split())
             except ValueError:
                 logging.error("Invalid file format: {}".format(rbg_file))
-                exit(1)
+                sys.exit()
             except Exception as e:
                 logging.error("Unexpected error: {}".format(e))
     except FileNotFoundError:
         logging.error("File not found: {}".format(rbg_file))
-        exit(1)
+        sys.exit()
     except ValueError:
         logging.error("Invalid file format: {}".format(rbg_file))
-        exit(1)
+        sys.exit()
     except Exception as e:
         logging.error("Unexpected error: {}".format(e))
 
@@ -62,7 +62,7 @@ def rgb_to_png(rbg_file,output_file='board.png'):
                 y, x, r, g, b = map(int, line.split())
             except ValueError:
                 logging.error("Invalid file format: {}".format(rbg_file))
-                exit(1)
+                sys.exit()
             except Exception as e:
                 logging.error("Unexpected error: {}".format(e))
             rgb_values.append((x, y, (r, g, b)))
@@ -89,7 +89,7 @@ if __name__ == '__main__':
         logging.info("RGB file: {}".format(rbg_file))
     else:
         logging.error("Please specify the RGB file path")
-        exit(1)
+        sys.exit()
     
     if len(sys.argv) == 3:
         output_file = sys.argv[2]

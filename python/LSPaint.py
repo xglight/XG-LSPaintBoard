@@ -1,4 +1,5 @@
 import socket
+import sys
 import logging
 import colorlog
 import threading
@@ -18,6 +19,7 @@ class Socket_server:
     port = 0
     server_name = ""
     client_socket = None
+    message = []
 
     def __init__(self, server_ip, port, server_name):
         self.server_ip = server_ip
@@ -49,13 +51,15 @@ class Socket_server:
                     (f"Welcome to the {self.server_name}!").encode('utf-8'))
                 logging.info(f"Client[{client_name}] connected")
 
+                threading.Thread(target = self.sendmsg, args = ()).start()
+
                 with self.client_socket:
                     while True:
                         try:
                             data = self.client_socket.recv(1024)
                         except Exception as e:
                             logging.error(f"Failed to receive data: {e}")
-                            exit(1)
+                            sys.exit()
 
                         if not data:
                             logging.info(f"Client[{client_name}] disconnected.")
@@ -88,12 +92,26 @@ class Socket_server:
 
                             lspaint.paint(uid, token, r, g, b, x, y)
     
-    def sendmsg(self, message):
-        try:
-            logging.debug(f"Sent message to client: {message}")
-            self.client_socket.sendall(message.encode('utf-8'))
-        except Exception as e:
-            logging.error(f"Failed to send message: {e}")
+    def append_msg(self,message):
+        self.message.append(message)
+
+    def get_merged_msg(self):
+        result = ""
+        for msg in self.message:
+            result += (msg + ",")
+        self.message.clear()
+        return result
+
+    def sendmsg(self):
+        while True:
+            if len(self.message) > 0:
+                msg = self.get_merged_msg()
+                try:
+                    logging.debug(f"Sent message to client: {msg}")
+                    self.client_socket.sendall(msg.encode('utf-8'))
+                except Exception as e:
+                    logging.error(f"Failed to send message: {e}")
+            time.sleep(0.2)
                         
 
 class LSPaint:
@@ -122,9 +140,9 @@ class LSPaint:
             elif type == 0xff:
                 id = struct.unpack_from('<I', event, ls)[0]
                 code = struct.unpack_from('B', event, ls+4)[0]
-                logging.debug(f"painting finished,id:{id},code:{hex(code)}")
+                logging.info(f"painting finished,id:{id},code:{hex(code)}")
                 ls += 5
-                socket_ser.sendmsg(f"{self.id_uid_map[id]} {code}")
+                socket_ser.append_msg(f"{id}-{self.id_uid_map[id]} {code}")
             else:
                 logging.warning(f"Unknown event type: {type}")
 
@@ -188,6 +206,7 @@ class LSPaint:
     def paint(self,uid,token,r,g,b,x,y):
         id = (self.paintid) % 4294967296
         logging.debug(f"({x},{y}) is painted with color ({r},{g},{b}),uid:{uid},token:{token},id:{id}")
+        logging.info(f"({r},{g},{b}) is painted at ({x},{y}),uid:{uid}")
         self.paintid += 1
 
         token_cleaned = token.replace("-", "")
@@ -257,7 +276,7 @@ def get_logger(level=logging.INFO):
     return logger
 
 if __name__ == "__main__":
-    logging = get_logger(logging.DEBUG)
+    logging = get_logger(logging.INFO)
     logging.info("Starting")
 
     init()

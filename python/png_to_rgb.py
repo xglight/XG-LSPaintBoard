@@ -58,7 +58,7 @@ if __name__ == '__main__':
         logging.info("Image file path: " + img_file)
     else:
         logging.error("Please input image file path")
-        exit(1)
+    sys.exit()
     
     if len(sys.argv) > 2:
         output_file = sys.argv[2]
