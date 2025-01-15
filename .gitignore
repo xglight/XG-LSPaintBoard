@@ -4,6 +4,5 @@ build
 .venv
 getboard
 python/output_image.png
-config.json
 python/head.rgb
 dist
