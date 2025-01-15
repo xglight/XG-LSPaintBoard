@@ -14,8 +14,6 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 
 ## 脚本介绍
 
-`PaintBoard.exe` 主程序，用于启动脚本。
-
 `LSPaintBoard.cpp` 主程序，负责除绘画外的一切处理。
 
 `paint.py` 绘画脚本，负责调用 API 绘制图片。
@@ -52,29 +50,35 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 
 > 本脚本支持通过 Email 发送绘画通知。
 
-|  参数名  |  类型  | 默认值 |    说明     |
-| :------: | :----: | :----: | :---------: |
-|  server  | string |   ""   | SMTP 服务器 |
-|   port   |  int   |   0    |  SMTP 端口  |
-| username | string |   ""   | SMTP 用户名 |
-| password | string |   ""   |  SMTP 密码  |
+|  参数名  |  类型  | 默认值 |     说明     |
+| :------: | :----: | :----: | :----------: |
+|  enable  |  bool  | false  |   是否启用   |
+|  server  | string |   ""   | SMTP 服务器  |
+|   port   |  int   |   0    |  SMTP 端口   |
+| username | string |   ""   | SMTP 用户名  |
+| password | string |   ""   |  SMTP 密码   |
+|    to    | string |   ""   | 接受邮件邮箱 |
 
 ### Paint
 
-|   参数名   |  类型  |     默认值      |      说明      |
-| :--------: | :----: | :-------------: | :------------: |
-|  img_file  | string | "board_rgb.txt" | rgb 图片文件名 |
-| token_file | string |   "token.txt"   |  token 文件名  |
+|   参数名    |  类型  |   默认值    |         说明         |
+| :---------: | :----: | :---------: | :------------------: |
+|  img_file   | string |  "img.txt"  |    rgb 图片文件名    |
+| token_file  | string | "token.txt" |     token 文件名     |
+| value_file  | string | "img.value" |     token 文件名     |
+|   start_x   |  int   |      0      | 画图开始位置的横坐标 |
+|   start_y   |  int   |      0      | 画图开始位置的纵坐标 |
+| token_group |  int   |      5      |  每组 token 的数目   |
 
-注：
+说明：
 
-1. `img_file` 应为 RGB 格式的图片，第一行为为高，宽，接下来每一行`y x r g b`，如果只有图片，用 `png_to_rgb.py` 脚本转换为 RGB 格式。
-2. `token_file` 应为 token 文件，每一行为`uid token`
+1. `img_file` 应为 RGB 格式的图片，第一行为为高、宽，接下来每一行 `y x r g b`，如果只有图片，用 `png_to_rgb.py` 脚本转换为 RGB 格式。
+2. `value_file` 第一行为为高、宽，接下来每行 `y x v`。
+3. `token_file` 应为 token 文件，每一行为`uid token`。
 
 ## 使用方法
 
 在 `config.json` 中设置相关信息。
 
-运行 `PaintBoard.exe` 启动脚本。
-
+运行 `LSPaintBoard.exe` 启动脚本。
 

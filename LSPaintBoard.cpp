@@ -26,14 +26,14 @@ std::map<int, double> paint_status;
 int success_total = 0, fail_total = 0;
 
 // socket
-int socket_port = 4500;
+int socket_port;
 std::string socket_server;
 
 // email
 bool enable_mail = false;
 std::string smtp_server, smtp_port, username, password, to_address;
 
-// file
+// filename
 std::string img_file, token_file, value_file;
 
 // token
@@ -53,7 +53,7 @@ std::vector<std::vector<int>> values;
 
 double nowtime() {
     return std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::system_clock::now().time_since_epoch()).count();
-}
+} // get time now
 
 struct SocketClient {
     std::string ip, username, servername;
@@ -89,7 +89,9 @@ struct SocketClient {
     void message_server() {
         while (1) {
             memset(recvbuf, 0, sizeof(recvbuf));
+
             int result = recv(sockClient, recvbuf, sizeof(recvbuf), 0);
+
             if (result == 0) {
                 spdlog::info("id:[{}] - Server[{}] disconnected", id, servername);
                 server_status = false;
@@ -98,17 +100,23 @@ struct SocketClient {
                 break;
             } else if (result > 0) {
                 spdlog::debug("id:[{}] - Received message from server[{}]: {}", id, servername, recvbuf);
+
                 std::string str(recvbuf);
                 std::vector<std::string> strs = split(str, ',');
+
                 for (auto str : strs) {
                     int id = std::stoi(str.substr(0, str.find("-")));
                     int uid = std::stoi(str.substr(str.find("-") + 1, str.find(" "))), token_id = uid_token_map[uid];
                     int status = std::stoi(str.substr(str.find(" ") + 1));
+
                     if (status == 0xed) { // token is unavailable
                         fail_total++;
+
                         spdlog::warn("Token[{}] is unavailable, removing from list", uid);
+
                         token_used[token_id] = true;
                         uid_token_map.erase(uid);
+
                         token_total--;
                     } else if (status == 0xee) { // token is cooling
                         fail_total++;
@@ -117,13 +125,17 @@ struct SocketClient {
                         paint_status[id] = nowtime();
                     } else { // unknown status code
                         fail_total++;
+
                         std::string hexStr = intToHex(status);
+
                         spdlog::warn("status code from uid[{}]: {}", uid, hexStr);
                     }
                 }
             } else {
                 spdlog::error("id:[{}] - Recv failed with error: {}", id, WSAGetLastError());
+
                 server_status = false;
+
                 closesocket(sockClient);
                 break;
             }
@@ -267,6 +279,7 @@ struct GetBoard {
         while (cnt < retry_count) {
             try {
                 cpr::Response r = cpr::Get(cpr::Url{url}, cpr::Header{hearder}, cpr::Timeout{timeout});
+
                 if (r.status_code == 200) {
                     std::copy(r.text.begin(), r.text.end(), byteArray.begin());
                     break;
@@ -277,12 +290,15 @@ struct GetBoard {
             } catch (...) {
                 spdlog::error("Failed to get board, unknown error");
             }
+
             if (cnt == retry_count - 1) {
                 spdlog::error("Failed to get board after {} attempts, giving up", retry_count);
                 return false;
             }
+
             cnt++;
             std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay));
+
             spdlog::info("Retrying to get board, count: {}", cnt);
         }
 
@@ -293,48 +309,60 @@ struct GetBoard {
                 uint8_t r = byteArray[y * width * 3 + x * 3];
                 uint8_t g = byteArray[y * width * 3 + x * 3 + 1];
                 uint8_t b = byteArray[y * width * 3 + x * 3 + 2];
+
                 board[y][x] = {r, g, b};
             }
 
         return true;
-    }
+    } // get LSPaintBoard now
 
     void saveimage_rgb(std::string filename) {
         FILE *fp = fopen(filename.c_str(), "w");
+
         if (fp == NULL) {
             spdlog::error("Failed to open file: {}", filename);
             return;
         }
+
         fprintf(fp, "%d %d\n", height, width);
-        for (int y = 0; y < height; y++) {
+
+        for (int y = 0; y < height; y++)
             for (int x = 0; x < width; x++) {
                 color c = board[y][x];
+
                 fprintf(fp, "%d %d %d %d %d\n", y, x, c.r, c.g, c.b);
             }
-        }
+
         fclose(fp);
+
         spdlog::info("Saved image_rgb to {}", filename);
-    }
+    } // save the png to rgb
 
     void read_byte_rgb(std::string filename) {
         FILE *fp = fopen(filename.c_str(), "rb");
+
         if (fp == NULL) {
             spdlog::error("Failed to open file: {}", filename);
             return;
         }
+
         std::vector<uint8_t> byteArray(width * height * 3);
+
         fread(byteArray.data(), 1, width * height * 3, fp);
-        for (int y = 0; y < height; y++) {
+
+        for (int y = 0; y < height; y++)
             for (int x = 0; x < width; x++) {
                 uint8_t r = byteArray[y * width * 3 + x * 3];
                 uint8_t g = byteArray[y * width * 3 + x * 3 + 1];
                 uint8_t b = byteArray[y * width * 3 + x * 3 + 2];
+
                 board[y][x] = {r, g, b};
             }
-        }
+
         fclose(fp);
+
         spdlog::info("Read image from {}", filename);
-    }
+    } // read the png from rgbfile
 } board;
 
 struct Paint {
@@ -348,6 +376,7 @@ struct Paint {
 
     void init() {
         for (int i = 0; i < 7; i++) chunks[i].clear();
+
         std::thread t([this]() { this->send_data(); });
         t.detach();
     }
@@ -357,88 +386,113 @@ struct Paint {
 
         for (int i = 0; i < chunk.size(); i++) {
             data d = chunk[i];
+
             result += std::to_string(d.uid) + " " + d.token + " " + std::to_string(d.r) + " " + std::to_string(d.g) + " " + std::to_string(d.b) + " " + std::to_string(d.x) + " " + std::to_string(d.y) + ",";
         }
+
         chunk.clear();
 
         return result;
-    }
+    } // merge datas
 
     void paint(int f, int uid, std::string token, int x, int y, int r, int g, int b) {
         spdlog::debug("Painting ({},{},{}) at ({},{}),uid: {},token: {}", r, g, b, x, y, uid, token);
         spdlog::info("Painting ({},{},{}) at ({},{})", r, g, b, x, y);
+
         chunks[f].push_back({uid, token, r, g, b, x, y});
-    }
+    } // paint (r,g,b) at (x,y)
 
     void send_data() {
         while (1) {
             for (int i = 0; i < 7; i++)
                 if (!chunks[i].empty() && client[i].server_status == true)
                     client[i].sendmsg(get_merge_data(chunks[i]));
+
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
         }
-    }
+    } // send paint's datas to LSPaint
 
 } paint;
 
 struct Init {
     void get_token() {
         std::ifstream f(token_file);
+
         if (f.fail()) {
             spdlog::error("Failed to open file: {}", token_file);
             return;
         }
 
         tokens.clear();
+
         int cnt = 0;
         while (!f.eof()) {
             int uid;
             std::string token;
+
             f >> uid >> token;
+
             tokens.push_back(std::make_pair(uid, token));
             free_tokens[group].push_back(tokens.size() - 1);
             uid_token_map[uid] = tokens.size() - 1;
+
             cnt++;
+
             if (cnt == token_group) group++, cnt = 0;
         }
 
         token_total = tokens.size();
+
         f.close();
+
         spdlog::info("Read tokens from {},total: {},group: {}", token_file, tokens.size(), group + 1);
+
         return;
-    }
+    } // get token file
 
     void get_image() {
         std::map<std::pair<int, int>, bool> vis;
         vis.clear();
+
         FILE *fp = fopen(img_file.c_str(), "r");
+
         if (fp == NULL) {
             spdlog::error("Failed to open file: {}", img_file);
             return;
         }
 
         int height, width;
+
         fscanf(fp, "%d %d", &height, &width);
+
         img_w = width, img_h = height;
+
         img.resize(height);
         for (int i = 0; i < height; i++) {
             img[i].resize(width);
         }
+
         int cnt = 0;
         int y = 0, x = 0;
         uint8_t r = 0, g = 0, b = 0;
+
         while (fscanf(fp, "%d %d %hhu %hhu %hhu", &y, &x, &r, &g, &b) == 5) {
             if (y >= height || x >= width || r > 255 || g > 255 || b > 255 || y < 0 || x < 0 || r < 0 || g < 0 || b < 0) {
                 spdlog::error("Invalid image data, y: {}, x: {}, r: {}, g: {}, b: {}", y, x, r, g, b);
                 continue;
             }
+
             if (!vis[std::make_pair(y, x)]) vis[std::make_pair(y, x)] = true, cnt++;
+
             img[y][x] = {r, g, b};
         }
+
         fclose(fp);
+
         if (cnt != img_w * img_h) spdlog::warn("Invalid image data, total pixel: {}, expected: {}", cnt, img_w * img_h);
+
         spdlog::info("Read image from {},image size: {}x{}", img_file, img_w, img_h);
-    }
+    } // get image file
 
     void get_value() {
         std::map<std::pair<int, int>, int> vis;
@@ -468,12 +522,12 @@ struct Init {
         fclose(fp);
         if (cnt != img_w * img_h) spdlog::warn("Invalid value data, total pixel: {}, expected: {}", cnt, img_w * img_h);
         spdlog::info("Read values from {}", value_file);
-    }
+    } // get value file
 
     void init_client() {
         client[0].init(socket_server, socket_port, "LSPaintBoard", 0);
         client[0].connect_server();
-    }
+    } // init socket client
 
     void init() {
         // start paintboard
@@ -513,7 +567,7 @@ struct Init {
         start_y = data["paint"]["start_y"].get<int>();
         token_group = data["paint"]["token_group"].get<int>();
 
-        // init
+        // init others
         init_client();
         std::this_thread::sleep_for(std::chrono::seconds(1));
         paint.init();
@@ -526,6 +580,7 @@ struct Init {
 } init;
 
 Email email(smtp_server, smtp_port, username, password);
+// Ininitialize email
 
 struct Work {
     struct work_node {
@@ -539,14 +594,12 @@ struct Work {
     };
 
     int cnt = 0;
-    std::multiset<work_node> st;
+    std::multiset<work_node> st; // points' values
 
     double calc(color c1, color c2) {
-        double r = c1.r - c2.r;
-        double g = c1.g - c2.g;
-        double b = c1.b - c2.b;
+        double r = c1.r - c2.r, g = c1.g - c2.g, b = c1.b - c2.b;
         return sqrt(r * r + g * g + b * b);
-    }
+    } // calculate color difference
 
     void work() {
         int send_total = 0;
@@ -556,7 +609,7 @@ struct Work {
         for (int i = start_y, ii = 0; ii < img_h; i++, ii++) {
             for (int j = start_x, jj = 0; jj < img_w; j++, jj++) {
                 double diff = calc(img[ii][jj], board.board[i][j]);
-                double v = diff * values[ii][jj];
+                double v = diff * values[ii][jj]; // calculate value
                 if (v < 0.0001) continue;
                 st.insert(work_node(j, i, v));
             }
@@ -565,26 +618,40 @@ struct Work {
         auto s = st.begin();
         while (s != st.end()) {
             for (int i = 0; i <= group; i++) {
-                if (nowtime() - paint_status[group_id[i]] < 30) continue;
+                if (nowtime() - paint_status[group_id[i]] < 30) continue; // cooling
+
                 if (s == st.end()) break;
+
                 if (free_tokens[i].empty()) continue;
+
                 paint_status.erase(group_id[i]);
-                int id = (cnt++) % 4294967296;
-                group_id[i] = id;
-                paint_status[id] = nowtime();
+
+                int id = (cnt++) % 4294967296; // get id, should be consistent with the id of LSPaint
+                group_id[i] = id;              // update id
+                paint_status[id] = nowtime();  // update paint time
+
                 for (auto it : free_tokens[i]) {
-                    if (token_used[it] == true) continue;
+                    if (token_used[it] == true) continue; // this token is error
+
                     if (s == st.end()) break;
+
                     int token_id = it;
-                    int x, y;
-                    x = s->x, y = s->y;
+                    int x = s->x, y = s->y;
                     int uid = tokens[token_id].first;
+
                     std::string token = tokens[token_id].second;
-                    paint.paint(0, uid, token, x, y, img[y - start_y][x - start_x].r, img[y - start_y][x - start_x].g, img[y - start_y][x - start_x].b);
+
+                    int _x = x - start_x, _y = y - start_y;
+
+                    paint.paint(0, uid, token, x, y, img[_y][_x].r, img[_y][_x].g, img[_y][_x].b);
+
                     send_total++, s++;
-                    if (send_total % 128 == 0) std::this_thread::sleep_for(std::chrono::milliseconds(800));
+
+                    if (send_total % 128 == 0) std::this_thread::sleep_for(std::chrono::milliseconds(800)); // link limit
                 }
+
                 if (s == st.end()) break;
+
                 s++;
             }
             break;
@@ -611,7 +678,7 @@ int main() {
                     break;
                 }
             if (f) break;
-        }
+        } // determine token availability
 
         if (board.getboard() == false) {
             spdlog::error("Failed to get board, retrying in 10 seconds");
