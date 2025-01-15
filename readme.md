@@ -14,13 +14,9 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 
 ## 脚本介绍
 
-`LSPaintBoard.cpp` 主程序，负责除绘画外的一切处理。
+使用 Python 进行网络交互，C++ 进行图片处理。
 
-`paint.py` 绘画脚本，负责调用 API 绘制图片。
-
-`rgb_to_png.py` 图片转换脚本，用于将 RGB 格式的图片转换为 PNG 格式。
-
-`config.json` 配置文件，用于设置相关信息。
+其中程序使用 Socket 通信。
 
 ### C++
 
