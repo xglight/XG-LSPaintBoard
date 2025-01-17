@@ -18,6 +18,8 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 
 其中程序使用 Socket 通信。
 
+如需调试，可以使用 
+
 ### C++
 
 -  [CPR](https://github.com/libcpr/cpr) 库，用于网络通信。
@@ -57,14 +59,15 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 
 ### Paint
 
-|   参数名    |  类型  |   默认值    |         说明         |
-| :---------: | :----: | :---------: | :------------------: |
-|  img_file   | string |  "img.txt"  |    rgb 图片文件名    |
-| token_file  | string | "token.txt" |     token 文件名     |
-| value_file  | string | "img.value" |     token 文件名     |
-|   start_x   |  int   |      0      | 画图开始位置的横坐标 |
-|   start_y   |  int   |      0      | 画图开始位置的纵坐标 |
-| token_group |  int   |      5      |  每组 token 的数目   |
+|   参数名    |  类型  |   默认值    |                  说明                   |
+| :---------: | :----: | :---------: | :-------------------------------------: |
+|  img_file   | string |  "img.txt"  |             rgb 图片文件名              |
+| token_file  | string | "token.txt" |              token 文件名               |
+| value_file  | string | "img.value" |              token 文件名               |
+|   start_x   |  int   |      0      |          画图开始位置的横坐标           |
+|   start_y   |  int   |      0      |          画图开始位置的纵坐标           |
+| token_group |  int   |      5      |            每组 token 的数目            |
+| time_limit  |  int   |     30      | token 的冷却时间，用于调试脚本，单位:秒 |
 
 说明：
 

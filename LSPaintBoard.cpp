@@ -18,12 +18,15 @@
 using json = nlohmann::json;
 
 // paint
+std::mutex board_mutex;
+std::string api_url;
 struct color {
     uint8_t r, g, b;
 };
 std::map<int, int> group_id;
 std::map<int, double> paint_status;
 int success_total = 0, fail_total = 0;
+double time_limit;
 
 // socket
 int socket_port;
@@ -55,11 +58,122 @@ double nowtime() {
     return std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::system_clock::now().time_since_epoch()).count();
 } // get time now
 
+struct GetBoard {
+    const int width = 1000, height = 600;
+    const int retry_count = 3, retry_delay = 1000, timeout = 10000;
+
+    std::vector<std::vector<color>> board;
+
+    GetBoard() {
+        board.resize(height);
+        for (int i = 0; i < height; i++) {
+            board[i].resize(width);
+        }
+    }
+
+    bool getboard() {
+        std::string url = api_url;
+        cpr::Header hearder = {{"User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36"}};
+
+        spdlog::info("Getting board from {}", url);
+
+        std::vector<uint8_t> byteArray(width * height * 3);
+
+        int cnt = 0;
+        while (cnt < retry_count) {
+            try {
+                cpr::Response r = cpr::Get(cpr::Url{url}, cpr::Header{hearder}, cpr::Timeout{timeout});
+
+                if (r.status_code == 200) {
+                    std::copy(r.text.begin(), r.text.end(), byteArray.begin());
+                    break;
+                } else
+                    spdlog::error("Failed to get board, status code: {}", r.status_code);
+            } catch (const cpr::Error &e) {
+                spdlog::error("Failed to get board, error: {}", e.message);
+            } catch (...) {
+                spdlog::error("Failed to get board, unknown error");
+            }
+
+            if (cnt == retry_count - 1) {
+                spdlog::error("Failed to get board after {} attempts, giving up", retry_count);
+                return false;
+            }
+
+            cnt++;
+            std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay));
+
+            spdlog::info("Retrying to get board, count: {}", cnt);
+        }
+
+        spdlog::info("Got board, size: {}x{}", width, height);
+
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++) {
+                uint8_t r = byteArray[y * width * 3 + x * 3];
+                uint8_t g = byteArray[y * width * 3 + x * 3 + 1];
+                uint8_t b = byteArray[y * width * 3 + x * 3 + 2];
+
+                board[y][x] = {r, g, b};
+            }
+
+        return true;
+    } // get LSPaintBoard now
+
+    void saveimage_rgb(std::string filename) {
+        FILE *fp = fopen(filename.c_str(), "w");
+
+        if (fp == NULL) {
+            spdlog::error("Failed to open file: {}", filename);
+            return;
+        }
+
+        fprintf(fp, "%d %d\n", height, width);
+
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++) {
+                color c = board[y][x];
+
+                fprintf(fp, "%d %d %d %d %d\n", y, x, c.r, c.g, c.b);
+            }
+
+        fclose(fp);
+
+        spdlog::info("Saved image_rgb to {}", filename);
+    } // save the png to rgb
+
+    void read_byte_rgb(std::string filename) {
+        FILE *fp = fopen(filename.c_str(), "rb");
+
+        if (fp == NULL) {
+            spdlog::error("Failed to open file: {}", filename);
+            return;
+        }
+
+        std::vector<uint8_t> byteArray(width * height * 3);
+
+        fread(byteArray.data(), 1, width * height * 3, fp);
+
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++) {
+                uint8_t r = byteArray[y * width * 3 + x * 3];
+                uint8_t g = byteArray[y * width * 3 + x * 3 + 1];
+                uint8_t b = byteArray[y * width * 3 + x * 3 + 2];
+
+                board[y][x] = {r, g, b};
+            }
+
+        fclose(fp);
+
+        spdlog::info("Read image from {}", filename);
+    } // read the png from rgbfile
+} board;
+
 struct SocketClient {
     std::string ip, username, servername;
     bool server_status = false;
     int port, id;
-    char recvbuf[1024];
+    char recvbuf[102400];
     WSADATA wsaData;
     SOCKADDR_IN addrSrv;
     SOCKET sockClient;
@@ -99,37 +213,53 @@ struct SocketClient {
                 // WSACleanup();
                 break;
             } else if (result > 0) {
-                spdlog::debug("id:[{}] - Received message from server[{}]: {}", id, servername, recvbuf);
+                spdlog::debug("id:[{}] - Received message from server[{}],len:{}", id, servername, result);
+                std::vector<uint8_t> bytemsg;
+                bytemsg.clear();
+                for (int i = 0; i < result; i++)
+                    bytemsg.push_back(recvbuf[i]);
+                int last = 0;
+                while (last < bytemsg.size()) {
+                    uint8_t type = bytemsg[last];
+                    last++;
+                    if (type == 0xfa) {
+                        uint16_t x = (bytemsg[last + 1] << 8) | bytemsg[last];
+                        uint16_t y = (bytemsg[last + 3] << 8) | bytemsg[last + 2];
+                        uint8_t r = bytemsg[last + 4];
+                        uint8_t g = bytemsg[last + 5];
+                        uint8_t b = bytemsg[last + 6];
+                        last += 7;
+                        spdlog::debug("Server:paint ({},{},{}) at ({},{})", r, g, b, x, y);
+                        std::lock_guard<std::mutex> lock(board_mutex);
+                        board.board[y][x] = {r, g, b};
+                    } else if (type == 0xff) {
+                        int id = (bytemsg[last + 3] << 24) | (bytemsg[last + 2] << 16) | (bytemsg[last + 1] << 8) | bytemsg[last];
+                        int uid = (bytemsg[last + 6] << 16) | (bytemsg[last + 5] << 8) | bytemsg[last + 4];
+                        int code = bytemsg[last + 7];
+                        last += 8;
 
-                std::string str(recvbuf);
-                std::vector<std::string> strs = split(str, ',');
+                        std::string hexstr = intToHex(code);
+                        spdlog::debug("Server:tast {} is {},uid:{}", id, hexstr, uid);
 
-                for (auto str : strs) {
-                    int id = std::stoi(str.substr(0, str.find("-")));
-                    int uid = std::stoi(str.substr(str.find("-") + 1, str.find(" "))), token_id = uid_token_map[uid];
-                    int status = std::stoi(str.substr(str.find(" ") + 1));
+                        int token_id = uid_token_map[uid];
 
-                    if (status == 0xed) { // token is unavailable
-                        fail_total++;
-
-                        spdlog::warn("Token[{}] is unavailable, removing from list", uid);
-
-                        token_used[token_id] = true;
-                        uid_token_map.erase(uid);
-
-                        token_total--;
-                    } else if (status == 0xee) { // token is cooling
-                        fail_total++;
-                    } else if (status == 0xef) { // success
-                        success_total++;
-                        paint_status[id] = nowtime();
-                    } else { // unknown status code
-                        fail_total++;
-
-                        std::string hexStr = intToHex(status);
-
-                        spdlog::warn("status code from uid[{}]: {}", uid, hexStr);
-                    }
+                        if (code == 0xef) { // success
+                            success_total++;
+                            paint_status[id] = nowtime();
+                        } else if (code == 0xee) { // cooling
+                            fail_total++;
+                        } else if (code == 0xed) { // failed
+                            fail_total++;
+                            spdlog::warn("Token[{}] is failed,remove from the list", uid);
+                            token_used[token_id] = true;
+                            uid_token_map.erase(uid);
+                            token_total--;
+                        } else { // other
+                            spdlog::warn("uid:{} get other type:{}", uid, hexstr);
+                            fail_total++;
+                        }
+                    } else
+                        spdlog::error("Unkown type:{}", id, type);
                 }
             } else {
                 spdlog::error("id:[{}] - Recv failed with error: {}", id, WSAGetLastError());
@@ -254,118 +384,8 @@ struct Email {
     }
 };
 
-struct GetBoard {
-    const int width = 1000, height = 600;
-    const int retry_count = 3, retry_delay = 1000, timeout = 10000;
-
-    std::vector<std::vector<color>> board;
-
-    GetBoard() {
-        board.resize(height);
-        for (int i = 0; i < height; i++) {
-            board[i].resize(width);
-        }
-    }
-
-    bool getboard() {
-        std::string url = "https://api.paintboard.ayakacraft.com:32767/api/paintboard/getboard";
-        cpr::Header hearder = {{"User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36"}};
-
-        spdlog::info("Getting board from {}", url);
-
-        std::vector<uint8_t> byteArray(width * height * 3);
-
-        int cnt = 0;
-        while (cnt < retry_count) {
-            try {
-                cpr::Response r = cpr::Get(cpr::Url{url}, cpr::Header{hearder}, cpr::Timeout{timeout});
-
-                if (r.status_code == 200) {
-                    std::copy(r.text.begin(), r.text.end(), byteArray.begin());
-                    break;
-                } else
-                    spdlog::error("Failed to get board, status code: {}", r.status_code);
-            } catch (const cpr::Error &e) {
-                spdlog::error("Failed to get board, error: {}", e.message);
-            } catch (...) {
-                spdlog::error("Failed to get board, unknown error");
-            }
-
-            if (cnt == retry_count - 1) {
-                spdlog::error("Failed to get board after {} attempts, giving up", retry_count);
-                return false;
-            }
-
-            cnt++;
-            std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay));
-
-            spdlog::info("Retrying to get board, count: {}", cnt);
-        }
-
-        spdlog::info("Got board, size: {}x{}", width, height);
-
-        for (int y = 0; y < height; y++)
-            for (int x = 0; x < width; x++) {
-                uint8_t r = byteArray[y * width * 3 + x * 3];
-                uint8_t g = byteArray[y * width * 3 + x * 3 + 1];
-                uint8_t b = byteArray[y * width * 3 + x * 3 + 2];
-
-                board[y][x] = {r, g, b};
-            }
-
-        return true;
-    } // get LSPaintBoard now
-
-    void saveimage_rgb(std::string filename) {
-        FILE *fp = fopen(filename.c_str(), "w");
-
-        if (fp == NULL) {
-            spdlog::error("Failed to open file: {}", filename);
-            return;
-        }
-
-        fprintf(fp, "%d %d\n", height, width);
-
-        for (int y = 0; y < height; y++)
-            for (int x = 0; x < width; x++) {
-                color c = board[y][x];
-
-                fprintf(fp, "%d %d %d %d %d\n", y, x, c.r, c.g, c.b);
-            }
-
-        fclose(fp);
-
-        spdlog::info("Saved image_rgb to {}", filename);
-    } // save the png to rgb
-
-    void read_byte_rgb(std::string filename) {
-        FILE *fp = fopen(filename.c_str(), "rb");
-
-        if (fp == NULL) {
-            spdlog::error("Failed to open file: {}", filename);
-            return;
-        }
-
-        std::vector<uint8_t> byteArray(width * height * 3);
-
-        fread(byteArray.data(), 1, width * height * 3, fp);
-
-        for (int y = 0; y < height; y++)
-            for (int x = 0; x < width; x++) {
-                uint8_t r = byteArray[y * width * 3 + x * 3];
-                uint8_t g = byteArray[y * width * 3 + x * 3 + 1];
-                uint8_t b = byteArray[y * width * 3 + x * 3 + 2];
-
-                board[y][x] = {r, g, b};
-            }
-
-        fclose(fp);
-
-        spdlog::info("Read image from {}", filename);
-    } // read the png from rgbfile
-} board;
-
 struct Paint {
+    std::mutex paint_mutex;
     struct data {
         int uid;
         std::string token;
@@ -390,6 +410,7 @@ struct Paint {
             result += std::to_string(d.uid) + " " + d.token + " " + std::to_string(d.r) + " " + std::to_string(d.g) + " " + std::to_string(d.b) + " " + std::to_string(d.x) + " " + std::to_string(d.y) + ",";
         }
 
+        std::lock_guard<std::mutex> lock(paint_mutex);
         chunk.clear();
 
         return result;
@@ -560,12 +581,14 @@ struct Init {
         socket_server = data["socket"]["server"].get<std::string>();
 
         // paint
+        api_url = data["paint"]["api_url"].get<std::string>();
         img_file = data["paint"]["img_file"].get<std::string>();
         token_file = data["paint"]["token_file"].get<std::string>();
         value_file = data["paint"]["value_file"].get<std::string>();
         start_x = data["paint"]["start_x"].get<int>();
         start_y = data["paint"]["start_y"].get<int>();
         token_group = data["paint"]["token_group"].get<int>();
+        time_limit = data["paint"]["time_limit"].get<double>();
 
         // init others
         init_client();
@@ -574,6 +597,7 @@ struct Init {
         get_token();
         get_image();
         get_value();
+        board.getboard();
 
         spdlog::info("Ininitialized");
     }
@@ -606,6 +630,7 @@ struct Work {
         spdlog::info("Start working");
         st.clear();
 
+        board_mutex.lock();
         for (int i = start_y, ii = 0; ii < img_h; i++, ii++) {
             for (int j = start_x, jj = 0; jj < img_w; j++, jj++) {
                 double diff = calc(img[ii][jj], board.board[i][j]);
@@ -614,11 +639,12 @@ struct Work {
                 st.insert(work_node(j, i, v));
             }
         }
+        board_mutex.unlock();
 
         auto s = st.begin();
         while (s != st.end()) {
             for (int i = 0; i <= group; i++) {
-                if (nowtime() - paint_status[group_id[i]] < 30) continue; // cooling
+                if (nowtime() - paint_status[group_id[i]] < time_limit) continue; // cooling
 
                 if (s == st.end()) break;
 
@@ -673,19 +699,19 @@ int main() {
         while (true) {
             bool f = false;
             for (int i = 0; i <= group; i++)
-                if (nowtime() - paint_status[group_id[i]] > 30) {
+                if (nowtime() - paint_status[group_id[i]] > time_limit) {
                     f = true;
                     break;
                 }
             if (f) break;
         } // determine token availability
 
-        if (board.getboard() == false) {
-            spdlog::error("Failed to get board, retrying in 10 seconds");
-            // email.send(to_address, to_address, "LSPaintBoard Error", "Failed to get board, retrying in 10 seconds");
-            std::this_thread::sleep_for(std::chrono::seconds(10));
-            continue;
-        }
+        // if (board.getboard() == false) {
+        //     spdlog::error("Failed to get board, retrying in 10 seconds");
+        //     // email.send(to_address, to_address, "LSPaintBoard Error", "Failed to get board, retrying in 10 seconds");
+        //     std::this_thread::sleep_for(std::chrono::seconds(10));
+        //     continue;
+        // }
 
         work.work();
     }

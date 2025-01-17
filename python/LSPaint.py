@@ -13,6 +13,7 @@ config_path = "config.json"
 socket_ip = ""
 socket_port = 0
 socket_ser = None
+websocket_url = ""
 
 class Socket_server:
     server_ip = ''
@@ -20,6 +21,7 @@ class Socket_server:
     server_name = ""
     client_socket = None
     message = []
+    message_len = 0
 
     def __init__(self, server_ip, port, server_name):
         self.server_ip = server_ip
@@ -94,12 +96,18 @@ class Socket_server:
     
     def append_msg(self,message):
         self.message.append(message)
+        self.message_len += len(message)
 
     def get_merged_msg(self):
-        result = ""
-        for msg in self.message:
-            result += (msg + ",")
+        result = bytearray(self.message_len)
+        i = 0
+        for chunk in self.message:
+            result[i:i + len(chunk)] = chunk
+            i += len(chunk)
+        
+        self.message_len = 0
         self.message.clear()
+
         return result
 
     def sendmsg(self):
@@ -108,7 +116,7 @@ class Socket_server:
                 msg = self.get_merged_msg()
                 try:
                     logging.debug(f"Sent message to client: {msg}")
-                    self.client_socket.sendall(msg.encode('utf-8'))
+                    self.client_socket.sendall(msg)
                 except Exception as e:
                     logging.error(f"Failed to send message: {e}")
             time.sleep(0.2)
@@ -118,6 +126,14 @@ class LSPaint:
     ws = None
     connected = False
     id_uid_map = {}
+
+    def uintToUint8Array(self,uint, bytes):
+        uint = int(uint)
+        array = bytearray(bytes)
+        for i in range(bytes):
+            array[i] = uint & (0xff)
+            uint = uint >> 8
+        return array
 
     def on_message(self, ws, event):
         global socket_ser
@@ -133,6 +149,15 @@ class LSPaint:
                 g = struct.unpack_from('B', event, ls+5)[0]
                 b = struct.unpack_from('B', event, ls+6)[0]
                 ls += 7
+
+                msg_data = bytearray([
+                    0xfa,
+                    *self.uintToUint8Array(x,2),
+                    *self.uintToUint8Array(y,2),
+                    r,g,b
+                ])
+
+                socket_ser.append_msg(msg_data)
                 # logging.info(f"({x},{y}) is painted with color ({r},{g},{b})")
             elif type == 0xfc:
                 logging.debug("ping-pong")
@@ -142,7 +167,15 @@ class LSPaint:
                 code = struct.unpack_from('B', event, ls+4)[0]
                 logging.info(f"painting finished,id:{id},code:{hex(code)}")
                 ls += 5
-                socket_ser.append_msg(f"{id}-{self.id_uid_map[id]} {code}")
+
+                msg_data = bytearray([
+                    0xff,
+                    *self.uintToUint8Array(id,4),
+                    *self.uintToUint8Array(self.id_uid_map[id],3),
+                    *self.uintToUint8Array(code,1)
+                ])
+
+                socket_ser.append_msg(msg_data)
             else:
                 logging.warning(f"Unknown event type: {type}")
 
@@ -156,7 +189,8 @@ class LSPaint:
         logging.warning(f"Connection closed: {close_status_code} - {close_msg}")
 
     def connect(self):
-        ws_url = "wss://api.paintboard.ayakacraft.com:32767/api/paintboard/ws"
+        global websocket_url
+        ws_url = websocket_url
         # websocket.enableTrace(True)
         self.ws = websocket.WebSocketApp(
             ws_url,
@@ -236,7 +270,9 @@ class LSPaint:
             time.sleep(0.2)
 
 def init():
-    global socket_ip, socket_port
+    global socket_ip
+    global socket_port
+    global websocket_url
     logging.info("Intializing...")
 
     with open(config_path, "r") as f:
@@ -245,6 +281,7 @@ def init():
     
     socket_ip = config["socket"]["server"]
     socket_port = config["socket"]["port"]
+    websocket_url = config["paint"]["ws_url"]
 
 def get_logger(level=logging.INFO):
     # 创建logger对象

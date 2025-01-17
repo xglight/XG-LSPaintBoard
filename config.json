@@ -1,7 +1,7 @@
 {
     "socket": {
-        "server": "",
-        "port": 4500
+        "server": "10.0.3.113",
+        "port": 4760
     },
     "email": {
         "enable": false,
@@ -12,11 +12,14 @@
         "to": "."
     },
     "paint": {
+        "ws_url": "ws://10.0.3.113:2380",
+        "api_url": "http://10.0.3.113:4796/getboard",
         "img_file": "img.txt",
         "token_file": "token.txt",
         "value_file": "img.value",
-        "start_x": 0,
-        "start_y": 0,
-        "token_group": 5
+        "start_x": 444,
+        "start_y": 502,
+        "token_group": 5,
+        "time_limit": 30
     }
 }
