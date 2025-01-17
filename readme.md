@@ -18,7 +18,7 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 
 其中程序使用 Socket 通信。
 
-如需调试，可以使用 
+如需调试，可以使用 [https://github.com/xglight/LSPaintBoard-Fake-Server](https://github.com/xglight/LSPaintBoard-Fake-Server) 项目。
 
 ### C++
 
