@@ -9,64 +9,17 @@ message("Building LSPaintBoard")
 message("Setting linker flags to -static")
 set(CMAKE_EXE_LINKER_FLAGS "-static")
 
-find_package(cpr REQUIRED)
-
 add_executable(LSPaintBoard LSPaintBoard.cpp)
-
-message("Building python scripts")
 
 set(PYTHON_SCRIPT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/python)
 
 # Build Python
 message("Building Python scripts")
 
-# Build LSPaint.exe
-
-execute_process(
-    COMMAND pyinstaller -y LSPaint.spec
-    WORKING_DIRECTORY ${PYTHON_SCRIPT_DIR}
-    RESULT_VARIABLE pyinstaller_result
-)
-
-if(NOT pyinstaller_result EQUAL 0)
-    message(FATAL_ERROR "pyinstaller failed with error code: ${pyinstaller_result}")
-endif()
-
-message("LSPaint.exe built successfully") 
-
-# Build png_to_rgb.exe
-
-execute_process(
-    COMMAND pyinstaller -y png_to_rgb.spec
-    WORKING_DIRECTORY ${PYTHON_SCRIPT_DIR}
-    RESULT_VARIABLE pyinstaller_result
-)
-
-if(NOT pyinstaller_result EQUAL 0)
-    message(FATAL_ERROR "pyinstaller failed with error code: ${pyinstaller_result}")
-endif()
-
-message("png_to_rgb.exe built successfully")
-
-# Build rgb_to_png.exe
-
-execute_process(
-    COMMAND pyinstaller -y rgb_to_png.spec
-    WORKING_DIRECTORY ${PYTHON_SCRIPT_DIR}
-    RESULT_VARIABLE pyinstaller_result
-)
-
-if(NOT pyinstaller_result EQUAL 0)
-    message(FATAL_ERROR "pyinstaller failed with error code: ${pyinstaller_result}")
-endif()
-
-message("rgb_to_png.exe built successfully")
-
-# Copy executables to build directory
-
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/python/dist/LSPaint.exe DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/python/dist/png_to_rgb.exe DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/python/dist/rgb_to_png.exe DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/python/dist/GetPaint.exe DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 # Build Python done
 message("Building Python scripts done")
@@ -74,7 +27,6 @@ message("Building Python scripts done")
 # link libraries
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(LSPaintBoard PRIVATE cpr::cpr)
 target_link_libraries(LSPaintBoard PRIVATE wsock32 ws2_32)
 
 message("Building LSPaintBoard done")

@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
 #include <thread>
 #include <cstdint>
 #include <cstdio>
@@ -8,9 +9,9 @@
 #include <iostream>
 #include <set>
 #include <string>
-#include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
 #include <vector>
+#include <regex>
 #include <curl/curl.h>
 #include "spdlog/spdlog.h"
 #include "winsock2.h"
@@ -26,6 +27,7 @@ struct color {
 std::map<int, int> group_id;
 std::map<int, double> paint_status;
 int success_total = 0, fail_total = 0;
+int thread_num = 0;
 double time_limit;
 
 // socket
@@ -71,77 +73,6 @@ struct GetBoard {
         }
     }
 
-    bool getboard() {
-        std::string url = api_url;
-        cpr::Header hearder = {{"User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36"}};
-
-        spdlog::info("Getting board from {}", url);
-
-        std::vector<uint8_t> byteArray(width * height * 3);
-
-        int cnt = 0;
-        while (cnt < retry_count) {
-            try {
-                cpr::Response r = cpr::Get(cpr::Url{url}, cpr::Header{hearder}, cpr::Timeout{timeout});
-
-                if (r.status_code == 200) {
-                    std::copy(r.text.begin(), r.text.end(), byteArray.begin());
-                    break;
-                } else
-                    spdlog::error("Failed to get board, status code: {}", r.status_code);
-            } catch (const cpr::Error &e) {
-                spdlog::error("Failed to get board, error: {}", e.message);
-            } catch (...) {
-                spdlog::error("Failed to get board, unknown error");
-            }
-
-            if (cnt == retry_count - 1) {
-                spdlog::error("Failed to get board after {} attempts, giving up", retry_count);
-                return false;
-            }
-
-            cnt++;
-            std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay));
-
-            spdlog::info("Retrying to get board, count: {}", cnt);
-        }
-
-        spdlog::info("Got board, size: {}x{}", width, height);
-
-        for (int y = 0; y < height; y++)
-            for (int x = 0; x < width; x++) {
-                uint8_t r = byteArray[y * width * 3 + x * 3];
-                uint8_t g = byteArray[y * width * 3 + x * 3 + 1];
-                uint8_t b = byteArray[y * width * 3 + x * 3 + 2];
-
-                board[y][x] = {r, g, b};
-            }
-
-        return true;
-    } // get LSPaintBoard now
-
-    void saveimage_rgb(std::string filename) {
-        FILE *fp = fopen(filename.c_str(), "w");
-
-        if (fp == NULL) {
-            spdlog::error("Failed to open file: {}", filename);
-            return;
-        }
-
-        fprintf(fp, "%d %d\n", height, width);
-
-        for (int y = 0; y < height; y++)
-            for (int x = 0; x < width; x++) {
-                color c = board[y][x];
-
-                fprintf(fp, "%d %d %d %d %d\n", y, x, c.r, c.g, c.b);
-            }
-
-        fclose(fp);
-
-        spdlog::info("Saved image_rgb to {}", filename);
-    } // save the png to rgb
-
     void read_byte_rgb(std::string filename) {
         FILE *fp = fopen(filename.c_str(), "rb");
 
@@ -167,6 +98,36 @@ struct GetBoard {
 
         spdlog::info("Read image from {}", filename);
     } // read the png from rgbfile
+
+    bool getboard() {
+        std::string command = "GetPaint.exe -u " + api_url;
+        system(command.c_str());
+        read_byte_rgb("board");
+        return true;
+    } // get LSPaintBoard now
+
+    void saveimage_rgb(std::string filename) {
+        FILE *fp = fopen(filename.c_str(), "w");
+
+        if (fp == NULL) {
+            spdlog::error("Failed to open file: {}", filename);
+            return;
+        }
+
+        fprintf(fp, "%d %d\n", height, width);
+
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++) {
+                color c = board[y][x];
+
+                fprintf(fp, "%d %d %d %d %d\n", y, x, c.r, c.g, c.b);
+            }
+
+        fclose(fp);
+
+        spdlog::info("Saved image_rgb to {}", filename);
+    } // save the png to rgb
+
 } board;
 
 struct SocketClient {
@@ -386,13 +347,8 @@ struct Email {
 
 struct Paint {
     std::mutex paint_mutex;
-    struct data {
-        int uid;
-        std::string token;
-        int r, g, b, x, y;
-    };
 
-    std::vector<data> chunks[7];
+    std::vector<std::vector<uint8_t>> chunks[7];
 
     void init() {
         for (int i = 0; i < 7; i++) chunks[i].clear();
@@ -401,33 +357,66 @@ struct Paint {
         t.detach();
     }
 
-    std::string get_merge_data(std::vector<data> &chunk) {
-        std::string result = "";
+    std::string get_merge_data(std::vector<std::vector<uint8_t>> chunk) {
+        std::vector<uint8_t> result;
+        result.clear();
 
-        for (int i = 0; i < chunk.size(); i++) {
-            data d = chunk[i];
-
-            result += std::to_string(d.uid) + " " + d.token + " " + std::to_string(d.r) + " " + std::to_string(d.g) + " " + std::to_string(d.b) + " " + std::to_string(d.x) + " " + std::to_string(d.y) + ",";
-        }
+        for (int i = 0; i < chunk.size(); i++)
+            result.insert(result.end(), chunk[i].begin(), chunk[i].end());
 
         std::lock_guard<std::mutex> lock(paint_mutex);
         chunk.clear();
 
-        return result;
+        return std::string(result.begin(), result.end());
     } // merge datas
 
-    void paint(int f, int uid, std::string token, int x, int y, int r, int g, int b) {
+    std::vector<uint8_t> uintToUint8Array(uint32_t uint, size_t bytes) {
+        std::vector<uint8_t> array(bytes);
+        for (size_t i = 0; i < bytes; ++i) {
+            array[i] = uint & 0xff;
+            uint = uint >> 8;
+        }
+        return array;
+    }
+
+    void paint(int f, int uid, std::string token, int x, int y, int r, int g, int b, int id) {
         spdlog::debug("Painting ({},{},{}) at ({},{}),uid: {},token: {}", r, g, b, x, y, uid, token);
         spdlog::info("Painting ({},{},{}) at ({},{})", r, g, b, x, y);
 
-        chunks[f].push_back({uid, token, r, g, b, x, y});
+        std::string token_cleaned = token;
+        token_cleaned.erase(std::remove(token_cleaned.begin(), token_cleaned.end(), '-'), token_cleaned.end());
+        std::regex pattern(".{2}");
+        auto words_begin = std::sregex_iterator(token_cleaned.begin(), token_cleaned.end(), pattern);
+        auto words_end = std::sregex_iterator();
+        std::vector<uint8_t> tokenBytes;
+        for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
+            std::smatch match = *i;
+            std::string match_str = match.str();
+            tokenBytes.push_back(std::stoi(match_str, nullptr, 16));
+        }
+
+        std::vector<uint8_t> tmpx = uintToUint8Array(x, 2);
+        std::vector<uint8_t> tmpy = uintToUint8Array(y, 2);
+        std::vector<uint8_t> tmpuid = uintToUint8Array(uid, 3);
+
+        std::vector<uint8_t> paint_data;
+        paint_data.clear();
+        paint_data.push_back(0xfe);
+        paint_data.insert(paint_data.end(), tmpx.begin(), tmpx.end());
+        paint_data.insert(paint_data.end(), tmpy.begin(), tmpy.end());
+        paint_data.push_back(r);
+        paint_data.push_back(g);
+        paint_data.push_back(b);
+        paint_data.insert(paint_data.end(), tmpuid.begin(), tmpuid.end());
+        paint_data.insert(paint_data.end(), tokenBytes.begin(), tokenBytes.end());
+        chunks[f].push_back(paint_data);
     } // paint (r,g,b) at (x,y)
 
     void send_data() {
         while (1) {
             for (int i = 0; i < 7; i++)
                 if (!chunks[i].empty() && client[i].server_status == true)
-                    client[i].sendmsg(get_merge_data(chunks[i]));
+                    client[i].sendmsg(get_merge_data(chunks[i]).c_str());
 
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
         }
@@ -436,12 +425,12 @@ struct Paint {
 } paint;
 
 struct Init {
-    void get_token() {
+    bool get_token() {
         std::ifstream f(token_file);
 
         if (f.fail()) {
             spdlog::error("Failed to open file: {}", token_file);
-            return;
+            return false;
         }
 
         tokens.clear();
@@ -468,10 +457,10 @@ struct Init {
 
         spdlog::info("Read tokens from {},total: {},group: {}", token_file, tokens.size(), group + 1);
 
-        return;
+        return true;
     } // get token file
 
-    void get_image() {
+    bool get_image() {
         std::map<std::pair<int, int>, bool> vis;
         vis.clear();
 
@@ -479,7 +468,7 @@ struct Init {
 
         if (fp == NULL) {
             spdlog::error("Failed to open file: {}", img_file);
-            return;
+            return false;
         }
 
         int height, width;
@@ -513,15 +502,16 @@ struct Init {
         if (cnt != img_w * img_h) spdlog::warn("Invalid image data, total pixel: {}, expected: {}", cnt, img_w * img_h);
 
         spdlog::info("Read image from {},image size: {}x{}", img_file, img_w, img_h);
+        return true;
     } // get image file
 
-    void get_value() {
+    bool get_value() {
         std::map<std::pair<int, int>, int> vis;
         vis.clear();
         FILE *fp = fopen(value_file.c_str(), "r");
         if (fp == NULL) {
             spdlog::error("Failed to open file: {}", value_file);
-            return;
+            return false;
         }
         int height, width;
         fscanf(fp, "%d %d", &height, &width);
@@ -543,14 +533,23 @@ struct Init {
         fclose(fp);
         if (cnt != img_w * img_h) spdlog::warn("Invalid value data, total pixel: {}, expected: {}", cnt, img_w * img_h);
         spdlog::info("Read values from {}", value_file);
+        return true;
     } // get value file
 
-    void init_client() {
-        client[0].init(socket_server, socket_port, "LSPaintBoard", 0);
-        client[0].connect_server();
+    bool init_client() {
+        if (thread_num > 7 || thread_num < 1) {
+            spdlog::error("Invalid thread_num, should be between 1 and 7");
+            return false;
+        }
+        for (int i = 0; i < thread_num; i++) {
+            system("");
+            client[i].init(socket_server, socket_port, "LSPaintBoard", i);
+            client[i].connect_server();
+        }
+        return true;
     } // init socket client
 
-    void init() {
+    bool init() {
         // start paintboard
         system("start LSPaint.exe");
 
@@ -559,7 +558,7 @@ struct Init {
         std::ifstream f("config.json");
         if (f.fail()) {
             spdlog::error("Failed to open file: config.json");
-            return;
+            return false;
         }
         json data = json::parse(f);
         f.close();
@@ -589,17 +588,19 @@ struct Init {
         start_y = data["paint"]["start_y"].get<int>();
         token_group = data["paint"]["token_group"].get<int>();
         time_limit = data["paint"]["time_limit"].get<double>();
+        thread_num = data["paint"]["thread_num"].get<int>();
 
         // init others
-        init_client();
+        if (init_client() == false) return false;
         std::this_thread::sleep_for(std::chrono::seconds(1));
         paint.init();
-        get_token();
-        get_image();
-        get_value();
-        board.getboard();
+        if (get_token() == false) return false;
+        if (get_image() == false) return false;
+        if (get_value() == false) return false;
+        if (board.getboard() == false) return false;
 
         spdlog::info("Ininitialized");
+        return true;
     }
 } init;
 
@@ -652,7 +653,7 @@ struct Work {
 
                 paint_status.erase(group_id[i]);
 
-                int id = (cnt++) % 4294967296; // get id, should be consistent with the id of LSPaint
+                int id = (++cnt) % 4294967296; // get id, should be consistent with the id of LSPaint
                 group_id[i] = id;              // update id
                 paint_status[id] = nowtime();  // update paint time
 
@@ -669,7 +670,7 @@ struct Work {
 
                     int _x = x - start_x, _y = y - start_y;
 
-                    paint.paint(0, uid, token, x, y, img[_y][_x].r, img[_y][_x].g, img[_y][_x].b);
+                    paint.paint(0, uid, token, x, y, img[_y][_x].r, img[_y][_x].g, img[_y][_x].b, id);
 
                     send_total++, s++;
 
@@ -693,7 +694,10 @@ int main() {
 
     spdlog::info("LSPaintBoard started");
 
-    init.init();
+    if (init.init() == false) {
+        spdlog::error("Failed to initialize");
+        return 1;
+    }
 
     while (true) {
         while (true) {

@@ -20,6 +20,7 @@
         "start_x": 444,
         "start_y": 502,
         "token_group": 5,
-        "time_limit": 30
+        "time_limit": 30,
+        "thread_num": 1
     }
 }

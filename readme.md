@@ -22,7 +22,6 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 
 ### C++
 
--  [CPR](https://github.com/libcpr/cpr) 库，用于网络通信。
 -  [spdlog](https://github.com/gabime/spdlog) 库，用于日志输出。
 -  [json](https://github.com/nlohmann/json) 库，用于配置文件读取。
 -  wsock32.dll，用于 Socket 通信。
@@ -80,4 +79,16 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 在 `config.json` 中设置相关信息。
 
 运行 `LSPaintBoard.exe` 启动脚本。
+
+## 手动编译
+
+> 如果 Python 未使用虚拟环境，可以把 `buildpython.ps1` 脚本中的第一行注释掉。
+
+```bash
+git clone https://github.com/xglight/LSPaintBoard.git
+cd LSPaintBoard
+.\buildpython.ps1
+mkdir build && cd build
+cmake ..
+```
 

@@ -7,11 +7,13 @@ import websocket
 import re
 import struct
 import time
-import json
+import argparse
+import sys
 
 config_path = "config.json"
 socket_ip = ""
 socket_port = 0
+socket_name = ""
 socket_ser = None
 websocket_url = ""
 
@@ -27,6 +29,12 @@ class Socket_server:
         self.server_ip = server_ip
         self.port = port
         self.server_name = server_name
+    
+    def uint8Array_to_uint(self, uint, array):
+        uint = int(uint)
+        for i in range(len(array)):
+            uint = uint | (array[i] << (i * 8))
+        return uint
 
     def start_server(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
@@ -66,33 +74,35 @@ class Socket_server:
                         if not data:
                             logging.info(f"Client[{client_name}] disconnected.")
                             break
-                        data = data.decode('utf-8')
+                        data = data
                         logging.debug(
                             f"Received data from {client_name}: {data}")
                         
-                        chunks = data.split(",")
-                        
-                        for chunk in chunks:
-                            if not chunk:
-                                continue
-                            
-                            parts = chunk.split(" ")
-                            if len(parts) != 7:
-                                logging.warning(f"Invalid data format: {chunk}")
-                                continue
+                        ls = 0
+                        while(ls < len(data)):
+                            type = struct.unpack_from('B', data, ls)[0]
+                            ls += 1
+                            if type == 0xfa:
+                                x = self.uint8Array_to_uint(2, data[ls:ls+2])
+                                y = self.uint8Array_to_uint(2, data[ls+2:ls+4])
+                                r = data[ls+4]
+                                g = data[ls+5]
+                                b = data[ls+6]
+                                uid = self.uint8Array_to_uint(3, data[ls+7:ls+10])
+                                tmptoken = str(self.uint8Array_to_uint(16, data[ls+10:ls+26]))
+                                token = ''
 
-                            uid, token, r, g, b, x, y = parts
-                            try:
-                                x = int(x)
-                                y = int(y)
-                                r = int(r)
-                                g = int(g)
-                                b = int(b)
-                            except ValueError:
-                                logging.warning(f"Invalid number format: {chunk}")
-                                continue
+                                for i in range(1,32+1):
+                                    token += tmptoken[i-1]
+                                    if i == 8 or i == 12 or i == 16 or i == 20:
+                                        token += '-'
 
-                            lspaint.paint(uid, token, r, g, b, x, y)
+                                ls += 27
+
+                                logging.debug(f"Received paint event: ({x},{y}) is painted with color ({r},{g},{b}),uid:{uid},token:{token}")
+                                lspaint.paint(x,y,r,g,b,uid,token)
+                                
+
     
     def append_msg(self,message):
         self.message.append(message)
@@ -238,10 +248,10 @@ class LSPaint:
         return array
 
     def paint(self,uid,token,r,g,b,x,y):
+        self.paintid += 1
         id = (self.paintid) % 4294967296
         logging.debug(f"({x},{y}) is painted with color ({r},{g},{b}),uid:{uid},token:{token},id:{id}")
         logging.info(f"({r},{g},{b}) is painted at ({x},{y}),uid:{uid}")
-        self.paintid += 1
 
         token_cleaned = token.replace("-", "")
         bytes_list = re.findall(".{2}", token_cleaned)
@@ -268,20 +278,6 @@ class LSPaint:
                 logging.debug("Start sending data,len(chunks): %d", len(self.chunks))
                 self.ws.send_bytes(self.get_merage_data())
             time.sleep(0.2)
-
-def init():
-    global socket_ip
-    global socket_port
-    global websocket_url
-    logging.info("Intializing...")
-
-    with open(config_path, "r") as f:
-        config = json.load(f)
-        logging.debug(config)
-    
-    socket_ip = config["socket"]["server"]
-    socket_port = config["socket"]["port"]
-    websocket_url = config["paint"]["ws_url"]
 
 def get_logger(level=logging.INFO):
     # 创建logger对象
@@ -312,13 +308,40 @@ def get_logger(level=logging.INFO):
     logger.addHandler(console_handler)
     return logger
 
+def init_argparse():
+    global socket_ip
+    global socket_port
+    global socket_name
+    parser = argparse.ArgumentParser(description='LSPaint server')
+    parser.add_argument('-host', type=str, help='socket server ip')
+    parser.add_argument('-port','-p', type=int, help='socket server port')
+    parser.add_argument('-name','-n', type=str, help='socket server name')
+
+    args = parser.parse_args()
+
+    if args.host is not None:
+        socket_ip = args.host
+    else:
+        logging.error("Socket server ip is not specified")
+        sys.exit(1)
+    if args.port is not None:
+        socket_port = args.port
+    else:
+        logging.error("Socket server port is not specified")
+        sys.exit(1)
+    if args.name is not None:
+        socket_name = args.name
+    else:
+        logging.error("Socket server name is not specified")
+        sys.exit(1)
+    
 if __name__ == "__main__":
     logging = get_logger(logging.INFO)
     logging.info("Starting")
 
-    init()
+    init_argparse()
 
-    socket_ser = Socket_server(socket_ip, socket_port, "Paint")
+    socket_ser = Socket_server(socket_ip, socket_port, socket_name)
     socket_server_thread = threading.Thread(target=socket_ser.start_server)
     socket_server_thread.start()
 

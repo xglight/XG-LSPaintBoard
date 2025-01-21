@@ -2,6 +2,8 @@ from PIL import Image
 import sys
 import logging
 import colorlog
+import argparse
+import os
 
 def get_logger(level=logging.INFO):
     # 创建logger对象
@@ -41,17 +43,19 @@ def rgb_to_png(rbg_file,output_file='board.png'):
                 width, height = map(int, f.readline().split())
             except ValueError:
                 logging.error("Invalid file format: {}".format(rbg_file))
-                sys.exit()
+                sys.exit(1)
             except Exception as e:
                 logging.error("Unexpected error: {}".format(e))
+                sys.exit(1)
     except FileNotFoundError:
         logging.error("File not found: {}".format(rbg_file))
-        sys.exit()
+        sys.exit(1)
     except ValueError:
         logging.error("Invalid file format: {}".format(rbg_file))
-        sys.exit()
+        sys.exit(1)
     except Exception as e:
         logging.error("Unexpected error: {}".format(e))
+        sys.exit(1)
 
     rgb_values = []
 
@@ -76,28 +80,31 @@ def rgb_to_png(rbg_file,output_file='board.png'):
         image.save(output_file)
     except Exception as e:
         logging.error("Unexpected error: {}".format(e))
+        sys.exit(1)
+
+def init_argparse():
+    global rbg_file
+    global output_file
+    parser = argparse.ArgumentParser(description='Convert RGB file to PNG file')
+    parser.add_argument('-file','-f', type=str, help='RGB file path')
+    parser.add_argument('-output','-o', type=str,default='img.png', help='Output file path')
+
+    args = parser.parse_args()
+
+    if args.file is not None:
+        rbg_file = args.file
+    else:
+        logging.error("Please input RGB file path")
+        sys.exit(1)
+    
+    if args.output is not None:
+        output_file = args.output
 
 if __name__ == '__main__':
     output_file = ""
 
     logging = get_logger()
     logging.info("Start converting RGB file to PNG file...")
-    
-    if len(sys.argv) == 2:
-        rbg_file = sys.argv[1]
-        rgb_to_png(rbg_file)
-        logging.info("RGB file: {}".format(rbg_file))
-    else:
-        logging.error("Please specify the RGB file path")
-        sys.exit()
-    
-    if len(sys.argv) == 3:
-        output_file = sys.argv[2]
-        rgb_to_png(rbg_file,output_file)
-        logging.info("Output file: {}".format(output_file))
-    else:
-        output_file = "board.png"
-        logging.info("Output file: board.png")
     
     rgb_to_png(rbg_file,output_file)
 

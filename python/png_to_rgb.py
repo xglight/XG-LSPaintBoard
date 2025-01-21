@@ -2,6 +2,8 @@ from PIL import Image
 import logging
 import colorlog
 import sys
+import argparse
+import os
 
 def get_logger(level=logging.INFO):
     # 创建logger对象
@@ -46,26 +48,32 @@ def convert_to_rgb(img_file, output_file="img.rgb"):
                     f.write(str(j) + ' '+str(i) +' ' + str(r) +' ' + str(g) +' ' + str(b) + '\n')
     except Exception as e:
         logging.error("Error: " + str(e))
+        sys.exit(1)
+
+def init_parser():
+    global img_file
+    global output_file
+    
+    parser = argparse.ArgumentParser(description='Convert PNG to RGB format')
+    parser.add_argument('-file','-f', type=str, help='PNG file path')
+    parser.add_argument('-o', '-output', type=str, help='Output file name',default='img.rgb')
+    
+    args = parser.parse_args()
+
+    if args.file is None:
+        logging.error("Please input PNG file path")
+        sys.exit(1)
+    else:
+        img_file = args.file
+    
+    if args.o is not None:
+        output_file = args.o
 
 if __name__ == '__main__':
     output_file = ""
 
     logging = get_logger()
     logging.info("Start converting")
-
-    if len(sys.argv) > 1:
-        img_file = sys.argv[1]
-        logging.info("Image file path: " + img_file)
-    else:
-        logging.error("Please input image file path")
-    sys.exit()
-    
-    if len(sys.argv) > 2:
-        output_file = sys.argv[2]
-        logging.info("Output file path: " + output_file)
-    else:
-        output_file = "img.rgb"
-        logging.info("Output file path: " + output_file)
 
     convert_to_rgb(img_file, output_file)
 
