@@ -671,7 +671,7 @@ struct Work {
                 while (nowtime() - client_status[now_client] <= 0.8);
             }
             if (s == st.end()) break;
-            spdlog::info("send_point: {},speed: {}point/s", send_num, total_send / (nowtime() - start_time));
+            spdlog::info("send_point: {},speed: {} point/s", send_num, total_send / (nowtime() - start_time));
             total_send += send_num, total_success += success_num;
             s++, now_token = (now_token + 1) % token_total;
         }
