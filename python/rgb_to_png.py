@@ -104,6 +104,7 @@ if __name__ == '__main__':
     output_file = ""
 
     logging = get_logger()
+    init_argparse()
     logging.info("Start converting RGB file to PNG file...")
     
     rgb_to_png(rbg_file,output_file)

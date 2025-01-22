@@ -37,7 +37,7 @@ def get_logger(level=logging.INFO):
 img_file = ""
 
 def convert_to_rgb(img_file, output_file="img.rgb"):
-    img = Image.open(img_file)
+    img = Image.open(img_file).convert('RGB')
     try:
         with open(output_file, "w") as f:
             f.write(str(img.size[1]) + ' ' + str(img.size[0]) + '\n')
@@ -73,6 +73,7 @@ if __name__ == '__main__':
     output_file = ""
 
     logging = get_logger()
+    init_parser()
     logging.info("Start converting")
 
     convert_to_rgb(img_file, output_file)

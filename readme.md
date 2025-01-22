@@ -39,9 +39,10 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 
 > 本脚本使用 Socket 通信，需要设置 Socket 可用的 UDP 端口。
 
-| 参数名 | 类型  | 默认值 |    说明     |
-| :----: | :---: | :----: | :---------: |
-|  port  |  int  |  4500  | Socket 端口 |
+| 参数名 |  类型  |   默认值    |    说明     |
+| :----: | :----: | :---------: | :---------: |
+| server | string | "localhost" | Socket 地址 |
+|  port  |  int   |    4500     | Socket 端口 |
 
 ### Email
 
@@ -58,20 +59,23 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 
 ### Paint
 
-|   参数名    |  类型  |   默认值    |                  说明                   |
-| :---------: | :----: | :---------: | :-------------------------------------: |
-|  img_file   | string |  "img.txt"  |             rgb 图片文件名              |
-| token_file  | string | "token.txt" |              token 文件名               |
-| value_file  | string | "img.value" |              token 文件名               |
-|   start_x   |  int   |      0      |          画图开始位置的横坐标           |
-|   start_y   |  int   |      0      |          画图开始位置的纵坐标           |
-| token_group |  int   |      5      |            每组 token 的数目            |
-| time_limit  |  int   |     30      | token 的冷却时间，用于调试脚本，单位:秒 |
+|   参数名    |  类型  |                               默认值                                |                  说明                   |
+| :---------: | :----: | :-----------------------------------------------------------------: | :-------------------------------------: |
+|   ws_url    | string |     wss://api.paintboard.ayakacraft.com:32767/api/paintboard/ws     |             WebSocket 地址              |
+|   api_url   | string | https://api.paintboard.ayakacraft.com:32767/api/paintboard/getboard |                API 地址                 |
+|  img_file   | string |                              "img.rgb"                              |             rgb 图片文件名              |
+| token_file  | string |                             "token.txt"                             |              token 文件名               |
+| value_file  | string |                             "img.value"                             |              token 文件名               |
+|   start_x   |  int   |                                  0                                  |          画图开始位置的横坐标           |
+|   start_y   |  int   |                                  0                                  |          画图开始位置的纵坐标           |
+| token_group |  int   |                                  5                                  |            每组 token 的数目            |
+| time_limit  |  int   |                                 30                                  | token 的冷却时间，用于调试脚本，单位:秒 |
+| thread_num  |  int   |                                  1                                  |              线程数 [1,7]               |
 
 说明：
 
 1. `img_file` 应为 RGB 格式的图片，第一行为为高、宽，接下来每一行 `y x r g b`，如果只有图片，用 `png_to_rgb.py` 脚本转换为 RGB 格式。
-2. `value_file` 第一行为为高、宽，接下来每行 `y x v`。
+2. `value_file` 为图片每个像素点的权值，越高代表该像素点越容易被涂画，第一行为为高、宽，接下来每行 `y x v`。
 3. `token_file` 应为 token 文件，每一行为`uid token`。
 
 ## 使用方法
@@ -87,8 +91,10 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 ```bash
 git clone https://github.com/xglight/LSPaintBoard.git
 cd LSPaintBoard
+mkdir build
 .\buildpython.ps1
-mkdir build && cd build
+cd build
 cmake ..
+cmake --build .
 ```
 

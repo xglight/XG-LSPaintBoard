@@ -335,6 +335,8 @@ def init_argparse():
         logging.error("Socket server name is not specified")
         sys.exit(1)
     
+    logging.info(f"Socket server ip: {socket_ip}, port: {socket_port}, name: {socket_name}")
+    
 if __name__ == "__main__":
     logging = get_logger(logging.INFO)
     logging.info("Starting")

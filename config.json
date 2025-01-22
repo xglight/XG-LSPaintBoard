@@ -1,6 +1,6 @@
 {
     "socket": {
-        "server": "10.0.3.113",
+        "server": "localhost",
         "port": 4760
     },
     "email": {
@@ -12,13 +12,13 @@
         "to": "."
     },
     "paint": {
-        "ws_url": "ws://10.0.3.113:2380",
-        "api_url": "http://10.0.3.113:4796/getboard",
-        "img_file": "img.txt",
+        "ws_url": "wss://api.paintboard.ayakacraft.com:32767/api/paintboard/ws",
+        "api_url": "https://api.paintboard.ayakacraft.com:32767/api/paintboard/getboard",
+        "img_file": "img.rgb",
         "token_file": "token.txt",
         "value_file": "img.value",
-        "start_x": 444,
-        "start_y": 502,
+        "start_x": 0,
+        "start_y": 0,
         "token_group": 5,
         "time_limit": 30,
         "thread_num": 1

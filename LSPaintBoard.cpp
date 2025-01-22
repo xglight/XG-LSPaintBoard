@@ -32,11 +32,11 @@ double time_limit;
 
 // socket
 int socket_port;
-std::string socket_server;
+std::string socket_host;
 
 // email
 bool enable_mail = false;
-std::string smtp_server, smtp_port, username, password, to_address;
+std::string smtp_host, smtp_port, username, password, to_address;
 
 // filename
 std::string img_file, token_file, value_file;
@@ -543,7 +543,7 @@ struct Init {
         }
         for (int i = 0; i < thread_num; i++) {
             system("");
-            client[i].init(socket_server, socket_port, "LSPaintBoard", i);
+            client[i].init(socket_host, socket_port, "LSPaintBoard", i);
             client[i].connect_server();
         }
         return true;
@@ -567,7 +567,7 @@ struct Init {
         enable_mail = data["email"]["enable"].get<bool>();
         if (enable_mail == true) {
             spdlog::info("Email enabled");
-            smtp_server = data["email"]["server"].get<std::string>();
+            smtp_host = data["email"]["host"].get<std::string>();
             smtp_port = data["email"]["port"].get<int>();
             username = data["email"]["username"].get<std::string>();
             password = data["email"]["password"].get<std::string>();
@@ -577,7 +577,7 @@ struct Init {
         // socket
         if (data["socket"]["port"] != nullptr && data["socket"]["port"].is_number())
             socket_port = data["socket"]["port"].get<int>();
-        socket_server = data["socket"]["server"].get<std::string>();
+        socket_host = data["socket"]["host"].get<std::string>();
 
         // paint
         api_url = data["paint"]["api_url"].get<std::string>();
@@ -604,7 +604,7 @@ struct Init {
     }
 } init;
 
-Email email(smtp_server, smtp_port, username, password);
+Email email(smtp_host, smtp_port, username, password);
 // Ininitialize email
 
 struct Work {
