@@ -19,7 +19,6 @@
         "value_file": "img.value",
         "start_x": 0,
         "start_y": 0,
-        "token_group": 5,
         "time_limit": 30,
         "thread_num": 1
     }

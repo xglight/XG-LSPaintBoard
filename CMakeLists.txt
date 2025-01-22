@@ -9,7 +9,7 @@ message("Building LSPaintBoard")
 message("Setting linker flags to -static")
 set(CMAKE_EXE_LINKER_FLAGS "-static")
 
-add_executable(LSPaintBoard LSPaintBoard.cpp)
+add_executable(LSPaintBoard LSPaintBoard.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/logo.rc)
 
 # link libraries
 

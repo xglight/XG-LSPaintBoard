@@ -24,11 +24,12 @@ std::string api_url, ws_url;
 struct color {
     uint8_t r, g, b;
 };
-std::map<int, int> group_id;
-std::map<int, double> paint_status;
-int success_total = 0, fail_total = 0;
+std::map<int, int> map_id_token;
+std::map<int, double> paint_status, client_status;
+int total_send = 0, total_success = 0;
+int success_num = 0, fail_num = 0;
 int thread_num = 0;
-double time_limit;
+double time_limit, start_time;
 
 // socket
 std::vector<int> socket_port;
@@ -44,9 +45,8 @@ std::string img_file, token_file, value_file;
 // token
 std::vector<std::pair<int, std::string>> tokens;
 std::map<int, bool> token_used;
-std::vector<int> free_tokens[10005];
 std::map<int, int> uid_token_map;
-int token_total = 0, token_group, group = 0;
+int token_total = 0, group = 0;
 
 // img
 int img_w, img_h;
@@ -151,16 +151,6 @@ struct SocketClient {
         return "0x" + ss.str();
     }
 
-    std::vector<std::string> split(const std::string &s, char delimiter) {
-        std::vector<std::string> tokens;
-        std::string token;
-        std::istringstream tokenStream(s);
-        while (std::getline(tokenStream, token, delimiter)) {
-            tokens.push_back(token);
-        }
-        return tokens;
-    }
-
     void message_server() {
         while (1) {
             memset(recvbuf, 0, sizeof(recvbuf));
@@ -205,19 +195,18 @@ struct SocketClient {
                         int token_id = uid_token_map[uid];
 
                         if (code == 0xef) { // success
-                            success_total++;
+                            success_num++;
                             paint_status[id] = nowtime();
                         } else if (code == 0xee) { // cooling
-                            fail_total++;
+                            fail_num++;
                         } else if (code == 0xed) { // failed
-                            fail_total++;
+                            fail_num++;
                             spdlog::warn("Token[{}] is failed,remove from the list", uid);
                             token_used[token_id] = true;
                             uid_token_map.erase(uid);
-                            token_total--;
                         } else { // other
                             spdlog::warn("uid:{} get other type:{}", uid, hexstr);
-                            fail_total++;
+                            fail_num++;
                         }
                     } else
                         spdlog::error("Unkown type:{}", id, type);
@@ -368,14 +357,14 @@ struct Paint {
         t.detach();
     }
 
-    std::vector<uint8_t> get_merge_data(std::vector<std::vector<uint8_t>> chunk) {
+    std::vector<uint8_t> get_merge_data(std::vector<std::vector<uint8_t>> &chunk) {
         std::vector<uint8_t> result;
         result.clear();
 
+        std::lock_guard<std::mutex> lock(paint_mutex);
         for (int i = 0; i < chunk.size(); i++)
             result.insert(result.end(), chunk[i].begin(), chunk[i].end());
 
-        std::lock_guard<std::mutex> lock(paint_mutex);
         chunk.clear();
 
         spdlog::debug("Merged data len: {}", result.size());
@@ -420,6 +409,7 @@ struct Paint {
         paint_data.push_back(r), paint_data.push_back(g), paint_data.push_back(b);
         paint_data.insert(paint_data.end(), tmpuid.begin(), tmpuid.end());
         paint_data.insert(paint_data.end(), tokenBytes.begin(), tokenBytes.end());
+        std::lock_guard<std::mutex> lock(paint_mutex);
         chunks[f].push_back(paint_data);
     } // paint (r,g,b) at (x,y)
 
@@ -452,21 +442,16 @@ struct Init {
             std::string token;
 
             f >> uid >> token;
-
             tokens.push_back(std::make_pair(uid, token));
-            free_tokens[group].push_back(tokens.size() - 1);
+
             uid_token_map[uid] = tokens.size() - 1;
-
-            cnt++;
-
-            if (cnt == token_group) group++, cnt = 0;
         }
 
         token_total = tokens.size();
 
         f.close();
 
-        spdlog::info("Read tokens from {},total: {},group: {}", token_file, tokens.size(), group + 1);
+        spdlog::info("Read tokens from {},total: {}", token_file, tokens.size());
 
         return true;
     } // get token file
@@ -600,7 +585,6 @@ struct Init {
         value_file = data["paint"]["value_file"].get<std::string>();
         start_x = data["paint"]["start_x"].get<int>();
         start_y = data["paint"]["start_y"].get<int>();
-        token_group = data["paint"]["token_group"].get<int>();
         time_limit = data["paint"]["time_limit"].get<double>();
         thread_num = data["paint"]["thread_num"].get<int>();
 
@@ -632,7 +616,7 @@ struct Work {
         }
     };
 
-    int cnt = 0;
+    int cnt = 0, now_token = 0, now_client = 0;
     std::multiset<work_node> st; // points' values
 
     double calc(color c1, color c2) {
@@ -641,7 +625,7 @@ struct Work {
     } // calculate color difference
 
     void work() {
-        int send_total = 0;
+        int send_num = 0;
         spdlog::info("Start working");
         st.clear();
 
@@ -657,49 +641,42 @@ struct Work {
         board_mutex.unlock();
 
         auto s = st.begin();
+
         while (s != st.end()) {
-            for (int i = 0; i <= group; i++) {
-                if (nowtime() - paint_status[group_id[i]] < time_limit) continue; // cooling
+            if (nowtime() - paint_status[map_id_token[now_token]] < time_limit) break; // cooling
 
-                if (s == st.end()) break;
+            if (s == st.end()) break;
 
-                if (free_tokens[i].empty()) continue;
+            if (token_used[now_token] == true) continue; // this token is error
+            int id = (++cnt) % 4294967296;               // get id, should be consistent with the id of LSPaint
+            map_id_token[now_token] = id;                // update id
+            paint_status[id] = nowtime();                // update paint time
 
-                paint_status.erase(group_id[i]);
+            if (s == st.end()) break;
 
-                int id = (++cnt) % 4294967296; // get id, should be consistent with the id of LSPaint
-                group_id[i] = id;              // update id
-                paint_status[id] = nowtime();  // update paint time
+            int x = s->x, y = s->y;
+            int uid = tokens[now_token].first;
 
-                for (auto it : free_tokens[i]) {
-                    if (token_used[it] == true) continue; // this token is error
+            std::string token = tokens[now_token].second;
 
-                    if (s == st.end()) break;
+            int _x = x - start_x, _y = y - start_y;
 
-                    int token_id = it;
-                    int x = s->x, y = s->y;
-                    int uid = tokens[token_id].first;
+            paint.paint(now_client, uid, token, x, y, img[_y][_x].r, img[_y][_x].g, img[_y][_x].b, id);
 
-                    std::string token = tokens[token_id].second;
+            send_num++, s++;
 
-                    int _x = x - start_x, _y = y - start_y;
-
-                    paint.paint(0, uid, token, x, y, img[_y][_x].r, img[_y][_x].g, img[_y][_x].b, id);
-
-                    send_total++, s++;
-
-                    if (send_total % 128 == 0) std::this_thread::sleep_for(std::chrono::milliseconds(800)); // link limit
-                }
-
-                if (s == st.end()) break;
-
-                s++;
+            if (send_num % 128 == 0) {
+                client_status[now_client] = nowtime(); // update client time
+                now_client = (now_client + 1) % thread_num;
+                while (nowtime() - client_status[now_client] <= 0.8);
             }
-            break;
+            if (s == st.end()) break;
+            spdlog::info("send_point: {},speed: {}point/s", send_num, total_send / (nowtime() - start_time));
+            total_send += send_num, total_success += success_num;
+            s++, now_token = (now_token + 1) % token_total;
         }
-
-        spdlog::info("End working, send total: {},success: {},failed: {}", send_total, success_total, fail_total);
-        send_total = 0, success_total = 0, fail_total = 0;
+        spdlog::info("End working, send total: {},success: {},failed: {}", send_num, success_num, fail_num);
+        send_num = 0, success_num = 0, fail_num = 0;
     }
 } work;
 
@@ -713,17 +690,11 @@ int main() {
         return 1;
     }
 
+    start_time = nowtime();
     while (true) {
-        while (true) {
-            bool f = false;
-            for (int i = 0; i <= group; i++)
-                if (nowtime() - paint_status[group_id[i]] > time_limit) {
-                    f = true;
-                    break;
-                }
-            if (f) break;
-        } // determine token availability
+        while (nowtime() - paint_status[map_id_token[work.now_token]] <= time_limit);
 
         work.work();
     }
+    return 0;
 }

@@ -59,18 +59,17 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 
 ### Paint
 
-|   参数名    |  类型  |                               默认值                                |                  说明                   |
-| :---------: | :----: | :-----------------------------------------------------------------: | :-------------------------------------: |
-|   ws_url    | string |     wss://api.paintboard.ayakacraft.com:32767/api/paintboard/ws     |             WebSocket 地址              |
-|   api_url   | string | https://api.paintboard.ayakacraft.com:32767/api/paintboard/getboard |                API 地址                 |
-|  img_file   | string |                              "img.rgb"                              |             rgb 图片文件名              |
-| token_file  | string |                             "token.txt"                             |              token 文件名               |
-| value_file  | string |                             "img.value"                             |              token 文件名               |
-|   start_x   |  int   |                                  0                                  |          画图开始位置的横坐标           |
-|   start_y   |  int   |                                  0                                  |          画图开始位置的纵坐标           |
-| token_group |  int   |                                  5                                  |            每组 token 的数目            |
-| time_limit  |  int   |                                 30                                  | token 的冷却时间，用于调试脚本，单位:秒 |
-| thread_num  |  int   |                                  1                                  |              线程数 [1,7]               |
+|   参数名   |  类型  |                               默认值                                |                  说明                   |
+| :--------: | :----: | :-----------------------------------------------------------------: | :-------------------------------------: |
+|   ws_url   | string |     wss://api.paintboard.ayakacraft.com:32767/api/paintboard/ws     |             WebSocket 地址              |
+|  api_url   | string | https://api.paintboard.ayakacraft.com:32767/api/paintboard/getboard |                API 地址                 |
+|  img_file  | string |                              "img.rgb"                              |             rgb 图片文件名              |
+| token_file | string |                             "token.txt"                             |              token 文件名               |
+| value_file | string |                             "img.value"                             |              token 文件名               |
+|  start_x   |  int   |                                  0                                  |          画图开始位置的横坐标           |
+|  start_y   |  int   |                                  0                                  |          画图开始位置的纵坐标           |
+| time_limit |  int   |                                 30                                  | token 的冷却时间，用于调试脚本，单位:秒 |
+| thread_num |  int   |                                  1                                  |              线程数 [1,7]               |
 
 说明：
 

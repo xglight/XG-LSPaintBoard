@@ -16,6 +16,7 @@ socket_name = ""
 socket_ser = None
 websocket_url = ""
 
+
 class Socket_server:
     server_ip = ''
     port = 0
@@ -28,12 +29,50 @@ class Socket_server:
         self.server_ip = server_ip
         self.port = port
         self.server_name = server_name
-    
+
     def uint8Array_to_uint(self, array):
         uint = 0
         for i in range(len(array)):
             uint |= (array[i] & 0xff) << (8 * i)
         return uint
+
+    def data_to_paint_event(self, data):
+        ls = 0
+        while (ls < len(data)):
+            type = struct.unpack_from('B', data, ls)[0]
+            ls += 1
+            if type == 0xfe:
+                try:
+                    x = self.uint8Array_to_uint(data[ls:ls+2])
+                    y = self.uint8Array_to_uint(data[ls+2:ls+4])
+                    r = data[ls+4]
+                    g = data[ls+5]
+                    b = data[ls+6]
+                    uid = self.uint8Array_to_uint(data[ls+7:ls+10])
+                except Exception as e:
+                    logging.error(f"Failed to parse paint event: {e}")
+                    return
+
+                tmptoken = ''
+                try:
+                    for i in range(10, 26):
+                        tmptoken += format(data[ls + i], '02x')
+                except Exception as e:
+                    logging.error(f"Failed to parse token: {e}")
+                    return
+
+                token = ''
+
+                for i in range(1, 32+1):
+                    token += tmptoken[i-1]
+                    if i == 8 or i == 12 or i == 16 or i == 20:
+                        token += '-'
+
+                ls += 26
+
+                logging.debug(
+                    f"Received paint event: ({x},{y}) is painted with color ({r},{g},{b}),uid:{uid},token:{token}")
+                lspaint.paint(uid, token, r, g, b, x, y)
 
     def start_server(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
@@ -60,52 +99,28 @@ class Socket_server:
                     (f"Welcome to the {self.server_name}!").encode('utf-8'))
                 logging.info(f"Client[{client_name}] connected")
 
-                threading.Thread(target = self.sendmsg, args = ()).start()
+                threading.Thread(target=self.sendmsg, args=()).start()
 
                 with self.client_socket:
                     while True:
                         try:
-                            data = self.client_socket.recv(1024000)
+                            data = self.client_socket.recv(102400)
                         except Exception as e:
                             logging.error(f"Failed to receive data: {e}")
                             sys.exit()
 
                         if not data:
-                            logging.info(f"Client[{client_name}] disconnected.")
+                            logging.info(
+                                f"Client[{client_name}] disconnected.")
                             break
                         data = data
                         logging.debug(
                             f"Received data from {client_name}: {data}")
-                        
-                        ls = 0
-                        while(ls < len(data)):
-                            type = struct.unpack_from('B', data, ls)[0]
-                            ls += 1
-                            if type == 0xfe:
-                                x = self.uint8Array_to_uint(data[ls:ls+2])
-                                y = self.uint8Array_to_uint(data[ls+2:ls+4])
-                                r = data[ls+4]
-                                g = data[ls+5]
-                                b = data[ls+6]
-                                uid = self.uint8Array_to_uint(data[ls+7:ls+10])
-                                tmptoken = ''
-                                for i in range(10,26):
-                                    tmptoken += format(data[ls + i], '02x')
-                                token = ''
 
-                                for i in range(1,32+1):
-                                    token += tmptoken[i-1]
-                                    if i == 8 or i == 12 or i == 16 or i == 20:
-                                        token += '-'
+                        threading.Thread(
+                            target=self.data_to_paint_event, args=(data,)).start()
 
-                                ls += 26
-
-                                logging.debug(f"Received paint event: ({x},{y}) is painted with color ({r},{g},{b}),uid:{uid},token:{token}")
-                                lspaint.paint(uid,token,r,g,b,x,y)
-                                
-
-    
-    def append_msg(self,message):
+    def append_msg(self, message):
         self.message.append(message)
         self.message_len += len(message)
 
@@ -115,7 +130,7 @@ class Socket_server:
         for chunk in self.message:
             result[i:i + len(chunk)] = chunk
             i += len(chunk)
-        
+
         self.message_len = 0
         self.message.clear()
 
@@ -131,14 +146,14 @@ class Socket_server:
                 except Exception as e:
                     logging.error(f"Failed to send message: {e}")
             time.sleep(0.2)
-                        
+
 
 class LSPaint:
     ws = None
     connected = False
     id_uid_map = {}
 
-    def uintToUint8Array(self,uint, bytes):
+    def uintToUint8Array(self, uint, bytes):
         uint = int(uint)
         array = bytearray(bytes)
         for i in range(bytes):
@@ -149,7 +164,7 @@ class LSPaint:
     def on_message(self, ws, event):
         global socket_ser
         ls = 0
-        while(ls < len(event)):
+        while (ls < len(event)):
             type = struct.unpack_from('B', event, ls)[0]
             ls += 1
             # logging.debug(f"event type: {type}")
@@ -163,9 +178,9 @@ class LSPaint:
 
                 msg_data = bytearray([
                     0xfa,
-                    *self.uintToUint8Array(x,2),
-                    *self.uintToUint8Array(y,2),
-                    r,g,b
+                    *self.uintToUint8Array(x, 2),
+                    *self.uintToUint8Array(y, 2),
+                    r, g, b
                 ])
 
                 socket_ser.append_msg(msg_data)
@@ -181,15 +196,14 @@ class LSPaint:
 
                 msg_data = bytearray([
                     0xff,
-                    *self.uintToUint8Array(id,4),
-                    *self.uintToUint8Array(self.id_uid_map[id],3),
-                    *self.uintToUint8Array(code,1)
+                    *self.uintToUint8Array(id, 4),
+                    *self.uintToUint8Array(self.id_uid_map[id], 3),
+                    *self.uintToUint8Array(code, 1)
                 ])
 
                 socket_ser.append_msg(msg_data)
             else:
                 logging.warning(f"Unknown event type: {type}")
-
 
     def on_open(self, ws):
         self.connected = True
@@ -197,7 +211,8 @@ class LSPaint:
 
     def on_close(self, ws, close_status_code, close_msg):
         self.connected = False
-        logging.warning(f"Connection closed: {close_status_code} - {close_msg}")
+        logging.warning(
+            f"Connection closed: {close_status_code} - {close_msg}")
 
     def connect(self):
         global websocket_url
@@ -220,16 +235,16 @@ class LSPaint:
             finally:
                 # 连接失败时的处理
                 time.sleep(1)  # 延时重试
-    
+
     paintid = 0
     chunks = []
     total_size = 0
-    
+
     def append_data(self, paintdata):
         logging.debug("append_data,len(paintdata): %d", len(paintdata))
         self.chunks.append(paintdata)
         self.total_size += len(paintdata)
-    
+
     def get_merage_data(self):
         result = bytearray(self.total_size)
         i = 0
@@ -240,7 +255,7 @@ class LSPaint:
         self.chunks.clear()
         return result
 
-    def uintToUint8Array(self,uint, bytes):
+    def uintToUint8Array(self, uint, bytes):
         uint = int(uint)
         array = bytearray(bytes)
         for i in range(bytes):
@@ -248,10 +263,11 @@ class LSPaint:
             uint = uint >> 8
         return array
 
-    def paint(self,uid,token,r,g,b,x,y):
+    def paint(self, uid, token, r, g, b, x, y):
         self.paintid += 1
         id = (self.paintid) % 4294967296
-        logging.debug(f"({x},{y}) is painted with color ({r},{g},{b}),uid:{uid},token:{token},id:{id}")
+        logging.debug(
+            f"({x},{y}) is painted with color ({r},{g},{b}),uid:{uid},token:{token},id:{id}")
         logging.info(f"({r},{g},{b}) is painted at ({x},{y}),uid:{uid}")
 
         token_cleaned = token.replace("-", "")
@@ -267,7 +283,7 @@ class LSPaint:
             *tokenBytes,
             *self.uintToUint8Array(id, 4)
         ])
-        
+
         self.id_uid_map[id] = uid
 
         self.append_data(paintData)
@@ -276,9 +292,11 @@ class LSPaint:
         while True:
             # 检查是否有包需要发送，以及 WebSocket 连接是否已打开
             if self.total_size > 0 and self.connected:
-                logging.debug("Start sending data,len(chunks): %d", len(self.chunks))
+                logging.debug(
+                    "Start sending data,len(chunks): %d", len(self.chunks))
                 self.ws.send_bytes(self.get_merage_data())
             time.sleep(0.2)
+
 
 def get_logger(level=logging.INFO):
     # 创建logger对象
@@ -309,16 +327,17 @@ def get_logger(level=logging.INFO):
     logger.addHandler(console_handler)
     return logger
 
+
 def init_argparse():
     global socket_ip
     global socket_port
     global socket_name
     global websocket_url
     parser = argparse.ArgumentParser(description='LSPaint server')
-    parser.add_argument('-shost','-sh', type=str, help='socket server ip')
-    parser.add_argument('-port','-p', type=int, help='socket server port')
-    parser.add_argument('-whost','-wh', type=str, help='websocket server url')
-    parser.add_argument('-name','-n', type=str, help='socket server name')
+    parser.add_argument('-shost', '-sh', type=str, help='socket server ip')
+    parser.add_argument('-port', '-p', type=int, help='socket server port')
+    parser.add_argument('-whost', '-wh', type=str, help='websocket server url')
+    parser.add_argument('-name', '-n', type=str, help='socket server name')
 
     args = parser.parse_args()
 
@@ -341,9 +360,11 @@ def init_argparse():
         websocket_url = args.whost
     else:
         logging.error("Websocket server url is not specified")
-    
-    logging.info(f"Socket server ip: {socket_ip}, port: {socket_port}; name: {socket_name}; websocket server url: {websocket_url}")
-    
+
+    logging.info(
+        f"Socket server ip: {socket_ip}, port: {socket_port}; name: {socket_name}; websocket server url: {websocket_url}")
+
+
 if __name__ == "__main__":
     logging = get_logger(logging.INFO)
     logging.info("Starting")
@@ -360,5 +381,3 @@ if __name__ == "__main__":
     send_data_thread.start()
 
     lspaint.connect()
-
-
