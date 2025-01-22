@@ -1,7 +1,7 @@
 {
     "socket": {
         "server": "localhost",
-        "port": 4760
+        "port": []
     },
     "email": {
         "enable": false,

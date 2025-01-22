@@ -41,8 +41,8 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 
 | 参数名 |  类型  |   默认值    |    说明     |
 | :----: | :----: | :---------: | :---------: |
-| server | string | "localhost" | Socket 地址 |
-|  port  |  int   |    4500     | Socket 端口 |
+|  host  | string | "localhost" | Socket 地址 |
+|  port  | int[]  |     []      | Socket 端口 |
 
 ### Email
 
@@ -51,7 +51,7 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 |  参数名  |  类型  | 默认值 |     说明     |
 | :------: | :----: | :----: | :----------: |
 |  enable  |  bool  | false  |   是否启用   |
-|  server  | string |   ""   | SMTP 服务器  |
+|   host   | string |   ""   | SMTP 服务器  |
 |   port   |  int   |   0    |  SMTP 端口   |
 | username | string |   ""   | SMTP 用户名  |
 | password | string |   ""   |  SMTP 密码   |

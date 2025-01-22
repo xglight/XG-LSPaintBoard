@@ -20,7 +20,7 @@ using json = nlohmann::json;
 
 // paint
 std::mutex board_mutex;
-std::string api_url;
+std::string api_url, ws_url;
 struct color {
     uint8_t r, g, b;
 };
@@ -31,7 +31,7 @@ int thread_num = 0;
 double time_limit;
 
 // socket
-int socket_port;
+std::vector<int> socket_port;
 std::string socket_host;
 
 // email
@@ -100,7 +100,7 @@ struct GetBoard {
     } // read the png from rgbfile
 
     bool getboard() {
-        std::string command = "GetPaint.exe -u " + api_url;
+        std::string command = "get_paint.exe -u " + api_url;
         system(command.c_str());
         read_byte_rgb("board");
         return true;
@@ -256,7 +256,7 @@ struct SocketClient {
         } else {
             recv(sockClient, recvbuf, sizeof(recvbuf), 0);
             servername = recvbuf;
-            spdlog::debug("id:[{}] - Received message from server[{}],IP:[{}]: {}", id, servername, ip, recvbuf);
+            spdlog::debug("id:[{}] - Received message from server[{}],IP:[{}]", id, servername, ip);
             spdlog::info("id:[{}] - Connected to server[{}], username: {}", id, servername, username);
         }
 
@@ -265,7 +265,7 @@ struct SocketClient {
         do {
             send(sockClient, username.c_str(), username.size(), 0);
             recv(sockClient, recvbuf, sizeof(recvbuf), 0);
-            spdlog::debug("id:[{}] - Received message from server[{}]: {}", id, servername, recvbuf);
+            spdlog::debug("id:[{}] - Received message from server[{}]", id, servername);
             break;
         } while (1);
 
@@ -275,17 +275,17 @@ struct SocketClient {
         return 1;
     }
 
-    bool sendmsg(std::string msg) {
+    bool sendmsg(std::vector<uint8_t> msg) {
         if (server_status == false) {
             spdlog::error("id:[{}] - Server is not connected, cannot send message", id);
             return false;
         }
-        int iSend = send(sockClient, msg.c_str(), msg.size(), 0);
+        int iSend = send(sockClient, (char *)msg.data(), msg.size(), 0);
         if (iSend == SOCKET_ERROR) {
             spdlog::error("id:[{}] - Send failed with error: {}", id, WSAGetLastError());
             return false;
         }
-        spdlog::debug("id:[{}] - Sent message to server[{}]: {}", id, servername, msg);
+        spdlog::debug("id:[{}] - Sent message to server[{}],len:{}", id, servername, iSend);
         return true;
     }
 } client[7];
@@ -357,7 +357,7 @@ struct Paint {
         t.detach();
     }
 
-    std::string get_merge_data(std::vector<std::vector<uint8_t>> chunk) {
+    std::vector<uint8_t> get_merge_data(std::vector<std::vector<uint8_t>> chunk) {
         std::vector<uint8_t> result;
         result.clear();
 
@@ -367,7 +367,8 @@ struct Paint {
         std::lock_guard<std::mutex> lock(paint_mutex);
         chunk.clear();
 
-        return std::string(result.begin(), result.end());
+        spdlog::debug("Merged data len: {}", result.size());
+        return result;
     } // merge datas
 
     std::vector<uint8_t> uintToUint8Array(uint32_t uint, size_t bytes) {
@@ -385,14 +386,15 @@ struct Paint {
 
         std::string token_cleaned = token;
         token_cleaned.erase(std::remove(token_cleaned.begin(), token_cleaned.end(), '-'), token_cleaned.end());
-        std::regex pattern(".{2}");
-        auto words_begin = std::sregex_iterator(token_cleaned.begin(), token_cleaned.end(), pattern);
-        auto words_end = std::sregex_iterator();
+        std::regex pattern("(..)");
+        std::sregex_iterator iter(token_cleaned.begin(), token_cleaned.end(), pattern);
+        std::sregex_iterator end;
         std::vector<uint8_t> tokenBytes;
-        for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
-            std::smatch match = *i;
-            std::string match_str = match.str();
-            tokenBytes.push_back(std::stoi(match_str, nullptr, 16));
+        tokenBytes.clear();
+        for (std::sregex_iterator i = iter; i != end; ++i) {
+            std::string byteString = i->str();
+            std::vector<uint8_t> byteVec = uintToUint8Array(std::stoi(byteString, nullptr, 16), 1);
+            tokenBytes.insert(tokenBytes.end(), byteVec.begin(), byteVec.end());
         }
 
         std::vector<uint8_t> tmpx = uintToUint8Array(x, 2);
@@ -404,9 +406,7 @@ struct Paint {
         paint_data.push_back(0xfe);
         paint_data.insert(paint_data.end(), tmpx.begin(), tmpx.end());
         paint_data.insert(paint_data.end(), tmpy.begin(), tmpy.end());
-        paint_data.push_back(r);
-        paint_data.push_back(g);
-        paint_data.push_back(b);
+        paint_data.push_back(r), paint_data.push_back(g), paint_data.push_back(b);
         paint_data.insert(paint_data.end(), tmpuid.begin(), tmpuid.end());
         paint_data.insert(paint_data.end(), tokenBytes.begin(), tokenBytes.end());
         chunks[f].push_back(paint_data);
@@ -416,7 +416,7 @@ struct Paint {
         while (1) {
             for (int i = 0; i < 7; i++)
                 if (!chunks[i].empty() && client[i].server_status == true)
-                    client[i].sendmsg(get_merge_data(chunks[i]).c_str());
+                    client[i].sendmsg(get_merge_data(chunks[i]));
 
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
         }
@@ -542,8 +542,10 @@ struct Init {
             return false;
         }
         for (int i = 0; i < thread_num; i++) {
-            system("");
-            client[i].init(socket_host, socket_port, "LSPaintBoard", i);
+            std::string command = "start LSPaint.exe -sh " + socket_host + " -port " + std::to_string(socket_port[i]) + " -wh " + ws_url + " -n Paint" + std::to_string(i);
+            spdlog::info("Starting LSPaint: {}", command);
+            system(command.c_str());
+            client[i].init(socket_host, socket_port[i], "LSPaintBoard", i);
             client[i].connect_server();
         }
         return true;
@@ -575,11 +577,12 @@ struct Init {
         }
 
         // socket
-        if (data["socket"]["port"] != nullptr && data["socket"]["port"].is_number())
-            socket_port = data["socket"]["port"].get<int>();
+        for (auto it : data["socket"]["port"])
+            socket_port.push_back(it.get<int>());
         socket_host = data["socket"]["host"].get<std::string>();
 
         // paint
+        ws_url = data["paint"]["ws_url"].get<std::string>();
         api_url = data["paint"]["api_url"].get<std::string>();
         img_file = data["paint"]["img_file"].get<std::string>();
         token_file = data["paint"]["token_file"].get<std::string>();
@@ -709,13 +712,6 @@ int main() {
                 }
             if (f) break;
         } // determine token availability
-
-        // if (board.getboard() == false) {
-        //     spdlog::error("Failed to get board, retrying in 10 seconds");
-        //     // email.send(to_address, to_address, "LSPaintBoard Error", "Failed to get board, retrying in 10 seconds");
-        //     std::this_thread::sleep_for(std::chrono::seconds(10));
-        //     continue;
-        // }
 
         work.work();
     }

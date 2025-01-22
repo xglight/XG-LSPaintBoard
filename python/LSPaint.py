@@ -3,12 +3,11 @@ import sys
 import logging
 import colorlog
 import threading
+import time
 import websocket
 import re
 import struct
-import time
 import argparse
-import sys
 
 config_path = "config.json"
 socket_ip = ""
@@ -30,10 +29,10 @@ class Socket_server:
         self.port = port
         self.server_name = server_name
     
-    def uint8Array_to_uint(self, uint, array):
-        uint = int(uint)
+    def uint8Array_to_uint(self, array):
+        uint = 0
         for i in range(len(array)):
-            uint = uint | (array[i] << (i * 8))
+            uint |= (array[i] & 0xff) << (8 * i)
         return uint
 
     def start_server(self):
@@ -66,7 +65,7 @@ class Socket_server:
                 with self.client_socket:
                     while True:
                         try:
-                            data = self.client_socket.recv(1024)
+                            data = self.client_socket.recv(1024000)
                         except Exception as e:
                             logging.error(f"Failed to receive data: {e}")
                             sys.exit()
@@ -82,14 +81,16 @@ class Socket_server:
                         while(ls < len(data)):
                             type = struct.unpack_from('B', data, ls)[0]
                             ls += 1
-                            if type == 0xfa:
-                                x = self.uint8Array_to_uint(2, data[ls:ls+2])
-                                y = self.uint8Array_to_uint(2, data[ls+2:ls+4])
+                            if type == 0xfe:
+                                x = self.uint8Array_to_uint(data[ls:ls+2])
+                                y = self.uint8Array_to_uint(data[ls+2:ls+4])
                                 r = data[ls+4]
                                 g = data[ls+5]
                                 b = data[ls+6]
-                                uid = self.uint8Array_to_uint(3, data[ls+7:ls+10])
-                                tmptoken = str(self.uint8Array_to_uint(16, data[ls+10:ls+26]))
+                                uid = self.uint8Array_to_uint(data[ls+7:ls+10])
+                                tmptoken = ''
+                                for i in range(10,26):
+                                    tmptoken += format(data[ls + i], '02x')
                                 token = ''
 
                                 for i in range(1,32+1):
@@ -97,10 +98,10 @@ class Socket_server:
                                     if i == 8 or i == 12 or i == 16 or i == 20:
                                         token += '-'
 
-                                ls += 27
+                                ls += 26
 
                                 logging.debug(f"Received paint event: ({x},{y}) is painted with color ({r},{g},{b}),uid:{uid},token:{token}")
-                                lspaint.paint(x,y,r,g,b,uid,token)
+                                lspaint.paint(uid,token,r,g,b,x,y)
                                 
 
     
@@ -312,15 +313,17 @@ def init_argparse():
     global socket_ip
     global socket_port
     global socket_name
+    global websocket_url
     parser = argparse.ArgumentParser(description='LSPaint server')
-    parser.add_argument('-host', type=str, help='socket server ip')
+    parser.add_argument('-shost','-sh', type=str, help='socket server ip')
     parser.add_argument('-port','-p', type=int, help='socket server port')
+    parser.add_argument('-whost','-wh', type=str, help='websocket server url')
     parser.add_argument('-name','-n', type=str, help='socket server name')
 
     args = parser.parse_args()
 
-    if args.host is not None:
-        socket_ip = args.host
+    if args.shost is not None:
+        socket_ip = args.shost
     else:
         logging.error("Socket server ip is not specified")
         sys.exit(1)
@@ -334,8 +337,12 @@ def init_argparse():
     else:
         logging.error("Socket server name is not specified")
         sys.exit(1)
+    if args.whost is not None:
+        websocket_url = args.whost
+    else:
+        logging.error("Websocket server url is not specified")
     
-    logging.info(f"Socket server ip: {socket_ip}, port: {socket_port}, name: {socket_name}")
+    logging.info(f"Socket server ip: {socket_ip}, port: {socket_port}; name: {socket_name}; websocket server url: {websocket_url}")
     
 if __name__ == "__main__":
     logging = get_logger(logging.INFO)

@@ -60,6 +60,7 @@ if __name__ == '__main__':
     logger.info("height:{}, width:{}, default_weight:{}".format(height, width, default_weight))
 
     with open('img.value', 'w') as f:
+        f.write(str(height) + ' ' + str(width) + '\n')
         for j in range(width):
             for i in range(height):
                 f.write(str(i) + ' ' + str(j) + ' ' + str(default_weight) + '\n')
