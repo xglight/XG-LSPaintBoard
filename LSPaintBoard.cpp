@@ -233,8 +233,19 @@ struct SocketClient {
         }
     }
 
-    bool connect_server() {
-        spdlog::info("id:[{}] - Connecting to server[{}], username: {}", id, ip, username);
+    bool start() {
+        int cnt = 0;
+        while (cnt < 3) {
+            if (try_connect()) return true;
+            cnt++;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
+        spdlog::error("id:[{}] - Failed to connect to server[{}], username: {},after 3 retries", id, ip, username);
+        return false;
+    }
+
+    bool try_connect() {
+        spdlog::info("id:[{}] - Trying to connect to server[{}], username: {}", id, ip, username);
         if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
             spdlog::error("WSAStartup failed with error: {}", WSAGetLastError());
             return 0;
@@ -546,7 +557,7 @@ struct Init {
             spdlog::info("Starting LSPaint: {}", command);
             system(command.c_str());
             client[i].init(socket_host, socket_port[i], "LSPaintBoard", i);
-            client[i].connect_server();
+            client[i].start();
         }
         return true;
     } // init socket client

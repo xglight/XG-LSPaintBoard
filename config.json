@@ -1,11 +1,11 @@
 {
     "socket": {
-        "server": "localhost",
+        "host": "localhost",
         "port": []
     },
     "email": {
         "enable": false,
-        "server": ".",
+        "host": ".",
         "port": 0,
         "username": ".",
         "password": ".",
