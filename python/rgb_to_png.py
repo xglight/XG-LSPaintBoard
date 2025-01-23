@@ -3,7 +3,7 @@ import sys
 import logging
 import colorlog
 import argparse
-import os
+
 
 def get_logger(level=logging.INFO):
     # 创建logger对象
@@ -34,9 +34,11 @@ def get_logger(level=logging.INFO):
     logger.addHandler(console_handler)
     return logger
 
+
 rbg_file = "board.rgb"
 
-def rgb_to_png(rbg_file,output_file='board.png'):
+
+def rgb_to_png(rbg_file, output_file='board.png'):
     try:
         with open(rbg_file, 'r') as f:
             try:
@@ -60,7 +62,7 @@ def rgb_to_png(rbg_file,output_file='board.png'):
     rgb_values = []
 
     with open(rbg_file, 'r') as f:
-        f.readline()  
+        f.readline()
         for line in f:
             try:
                 y, x, r, g, b = map(int, line.split())
@@ -75,19 +77,22 @@ def rgb_to_png(rbg_file,output_file='board.png'):
 
     for x, y, (r, g, b) in rgb_values:
         image.putpixel((x, y), (r, g, b))
-    
+
     try:
         image.save(output_file)
     except Exception as e:
         logging.error("Unexpected error: {}".format(e))
         sys.exit(1)
 
+
 def init_argparse():
     global rbg_file
     global output_file
-    parser = argparse.ArgumentParser(description='Convert RGB file to PNG file')
-    parser.add_argument('-file','-f', type=str, help='RGB file path')
-    parser.add_argument('-output','-o', type=str,default='img.png', help='Output file path')
+    parser = argparse.ArgumentParser(
+        description='Convert RGB file to PNG file')
+    parser.add_argument('-file', '-f', type=str, help='RGB file path')
+    parser.add_argument('-output', '-o', type=str,
+                        default='img.png', help='Output file path')
 
     args = parser.parse_args()
 
@@ -96,9 +101,10 @@ def init_argparse():
     else:
         logging.error("Please input RGB file path")
         sys.exit(1)
-    
+
     if args.output is not None:
         output_file = args.output
+
 
 if __name__ == '__main__':
     output_file = ""
@@ -106,9 +112,7 @@ if __name__ == '__main__':
     logging = get_logger()
     init_argparse()
     logging.info("Start converting RGB file to PNG file...")
-    
-    rgb_to_png(rbg_file,output_file)
+
+    rgb_to_png(rbg_file, output_file)
 
     logging.info("Finish converting")
-    
-

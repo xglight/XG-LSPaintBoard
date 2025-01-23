@@ -3,7 +3,7 @@ import logging
 import colorlog
 import sys
 import argparse
-import os
+
 
 def get_logger(level=logging.INFO):
     # 创建logger对象
@@ -34,7 +34,9 @@ def get_logger(level=logging.INFO):
     logger.addHandler(console_handler)
     return logger
 
+
 img_file = ""
+
 
 def convert_to_rgb(img_file, output_file="img.rgb"):
     img = Image.open(img_file).convert('RGB')
@@ -45,19 +47,22 @@ def convert_to_rgb(img_file, output_file="img.rgb"):
             for i in range(img.size[0]):
                 for j in range(img.size[1]):
                     r, g, b = img.getpixel((i, j))
-                    f.write(str(j) + ' '+str(i) +' ' + str(r) +' ' + str(g) +' ' + str(b) + '\n')
+                    f.write(str(j) + ' '+str(i) + ' ' + str(r) +
+                            ' ' + str(g) + ' ' + str(b) + '\n')
     except Exception as e:
         logging.error("Error: " + str(e))
         sys.exit(1)
 
+
 def init_parser():
     global img_file
     global output_file
-    
+
     parser = argparse.ArgumentParser(description='Convert PNG to RGB format')
-    parser.add_argument('-file','-f', type=str, help='PNG file path')
-    parser.add_argument('-o', '-output', type=str, help='Output file name',default='img.rgb')
-    
+    parser.add_argument('-file', '-f', type=str, help='PNG file path')
+    parser.add_argument('-o', '-output', type=str,
+                        help='Output file name', default='img.rgb')
+
     args = parser.parse_args()
 
     if args.file is None:
@@ -65,9 +70,10 @@ def init_parser():
         sys.exit(1)
     else:
         img_file = args.file
-    
+
     if args.o is not None:
         output_file = args.o
+
 
 if __name__ == '__main__':
     output_file = ""
@@ -79,4 +85,3 @@ if __name__ == '__main__':
     convert_to_rgb(img_file, output_file)
 
     logging.info("Finish converting")
-    

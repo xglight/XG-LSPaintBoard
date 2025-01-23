@@ -1,8 +1,8 @@
-# LSPaintBoard
+# XG-LSPaintBoard
 
 洛谷冬日画板自动化脚本。
 
-![](https://img.shields.io/badge/Python-3.10.11-blue) ![](https://img.shields.io/badge/C++-Clang_19.1.4-blue)
+![](https://img.shields.io/badge/Python-3.10.11-blue) ![](https://img.shields.io/badge/C++-Clang_19.1.4-blue) ![GitHub License](https://img.shields.io/github/license/xglight/XG-LSPaintBoard)
 
 ## 关于冬日画板
 
@@ -24,15 +24,36 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 
 -  [spdlog](https://github.com/gabime/spdlog) 库，用于日志输出。
 -  [json](https://github.com/nlohmann/json) 库，用于配置文件读取。
+-  [curl](https://github.com/curl/curl) 库，用于邮件发送。
 -  wsock32.dll，用于 Socket 通信。
 
 ### Python
 
 - [Pillow](https://github.com/python-pillow/Pillow) 库，用于图片处理。
-- [websocket-client](https://github.com/websocket-client/websocket-client) 库，用于 Socket 通信。
+- [websocket](https://github.com/websocket-client/websocket-client) 库，用于 Websocket 通信。
+- [websocket-client](https://github.com/websocket-client/websocket-client) 库，用于 Websocket 通信。
 - [logging](https://docs.python.org/3/library/logging.html) 库，用于日志输出。
+- [colorlog](https://github.com/borntyping/python-colorlog) 库，用于日志输出。
 - [socket](https://docs.python.org/3/library/socket.html) 库，用于 Socket 通信。
 - [requests](https://github.com/psf/requests) 库，用于网络交互。
+- [argparse](https://docs.python.org/3/library/argparse.html) 库，用于命令行参数解析。
+
+## 使用
+
+在 `config.json` 中配置相关信息，详见下面 `参数说明`。
+
+运行 `LSPaintBoard.exe`。
+
+其他文件说明：
+
+- `LSPaint.exe`：与服务器通信的客户端程序。
+- `gen_value.exe` ：生成 `value_file` 的程序。
+- `get_paint.exe` ：获取服务器当前图片的程序。
+- `buildpython.ps1` ：编译 Python 环境的脚本。
+- `png_to_rgb.exe` ：将 PNG 格式的图片转换为 RGB 格式的图片。
+- `rgb_to_png.exe` ：将 RGB 格式的图片转换为权值文件。
+
+所有程序都有命令行使用帮助，可用 `-h` 或 `--help` 参数查看。
 
 ## 参数说明
 
@@ -74,15 +95,9 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 
 说明：
 
-1. `img_file` 应为 RGB 格式的图片，第一行为为高、宽，接下来每一行 `y x r g b`，如果只有图片，用 `png_to_rgb.py` 脚本转换为 RGB 格式。
+1. `img_file` 应为 RGB 格式的图片，第一行为为高、宽，接下来每一行 `y x r g b`。
 2. `value_file` 为图片每个像素点的权值，越高代表该像素点越容易被涂画，第一行为为高、宽，接下来每行 `y x v`。
 3. `token_file` 应为 token 文件，每一行为`uid token`。
-
-## 使用方法
-
-在 `config.json` 中设置相关信息。
-
-运行 `LSPaintBoard.exe` 启动脚本。
 
 ## 手动编译
 

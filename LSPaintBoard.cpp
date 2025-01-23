@@ -599,6 +599,15 @@ struct Init {
         if (get_value() == false) return false;
         if (board.getboard() == false) return false;
 
+        if (start_x < 0 || start_y < 0) {
+            spdlog::error("Invalid start_x or start_y, should be greater than or equal to 0");
+            return false;
+        }
+        if (start_x + img_w > 1000 || start_y + img_h > 600) {
+            spdlog::error("Invalid start_x or start_y, should be less than 1000 and 600");
+            return false;
+        }
+
         spdlog::info("Ininitialized");
         return true;
     }
