@@ -32,6 +32,7 @@ Api 文档: [https://www.luogu.com/article/57b4jd3c](https://www.luogu.com/artic
 - [websocket-client](https://github.com/websocket-client/websocket-client) 库，用于 Socket 通信。
 - [logging](https://docs.python.org/3/library/logging.html) 库，用于日志输出。
 - [socket](https://docs.python.org/3/library/socket.html) 库，用于 Socket 通信。
+- [requests](https://github.com/psf/requests) 库，用于网络交互。
 
 ## 参数说明
 

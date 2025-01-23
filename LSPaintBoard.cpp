@@ -1,6 +1,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
+#include <random>
 #include <thread>
 #include <cstdint>
 #include <cstdio>
@@ -17,6 +18,7 @@
 #include "winsock2.h"
 
 using json = nlohmann::json;
+using ll = long long;
 
 // paint
 std::mutex board_mutex;
@@ -26,8 +28,8 @@ struct color {
 };
 std::map<int, int> map_id_token;
 std::map<int, double> paint_status, client_status;
-int total_send = 0, total_success = 0;
-int success_num = 0, fail_num = 0;
+ll total_send = 0, total_success = 0;
+ll success_num = 0, fail_num = 0;
 int thread_num = 0;
 double time_limit, start_time;
 
@@ -54,7 +56,7 @@ std::vector<std::vector<color>> img;
 int start_x, start_y, end_x, end_y;
 
 // value
-std::vector<std::vector<int>> values;
+std::vector<std::vector<double>> values;
 
 double nowtime() {
     return std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -196,7 +198,7 @@ struct SocketClient {
 
                         if (code == 0xef) { // success
                             success_num++;
-                            paint_status[id] = nowtime();
+                            paint_status[id] = nowtime() - 0.8;
                         } else if (code == 0xee) { // cooling
                             fail_num++;
                         } else if (code == 0xed) { // failed
@@ -605,6 +607,8 @@ struct Init {
 Email email(smtp_host, smtp_port, username, password);
 // Ininitialize email
 
+std::mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
+std::uniform_real_distribution<double> weight(1.0, 100.0);
 struct Work {
     struct work_node {
         int x, y;
@@ -616,7 +620,7 @@ struct Work {
         }
     };
 
-    int cnt = 0, now_token = 0, now_client = 0;
+    ll cnt = 0, now_token = 0, now_client = 0;
     std::multiset<work_node> st; // points' values
 
     double calc(color c1, color c2) {
@@ -625,7 +629,7 @@ struct Work {
     } // calculate color difference
 
     void work() {
-        int send_num = 0;
+        ll send_num = 0;
         spdlog::info("Start working");
         st.clear();
 
@@ -635,10 +639,16 @@ struct Work {
                 double diff = calc(img[ii][jj], board.board[i][j]);
                 double v = diff * values[ii][jj]; // calculate value
                 if (v < 0.0001) continue;
-                st.insert(work_node(j, i, v));
+                st.insert(work_node(j, i, v * weight(rng)));
             }
         }
         board_mutex.unlock();
+
+        if (st.size() == 0) {
+            spdlog::info("No work to do");
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            return;
+        }
 
         auto s = st.begin();
 
@@ -668,13 +678,32 @@ struct Work {
             if (send_num % 128 == 0) {
                 client_status[now_client] = nowtime(); // update client time
                 now_client = (now_client + 1) % thread_num;
+                int retry = 0;
+                while (client[now_client].server_status == false) {
+                    if (thread_num < 1) {
+                        spdlog::error("No client available, exit");
+                        exit(1);
+                    }
+                    spdlog::warn("Client {} is not ready, retrying...", now_client);
+                    client[now_client].start();
+                    std::this_thread::sleep_for(std::chrono::seconds(3));
+                    retry++;
+                    if (retry > 3) {
+                        spdlog::error("Client {} is not ready, after retrying 3 times", now_client);
+                        now_client = (now_client + 1) % thread_num;
+                        thread_num--;
+                    }
+                }
                 while (nowtime() - client_status[now_client] <= 0.8);
             }
             if (s == st.end()) break;
-            spdlog::info("send_point: {},speed: {} point/s", send_num, total_send / (nowtime() - start_time));
-            total_send += send_num, total_success += success_num;
+            double v = (double)(total_send * 1.0) / (double)(nowtime() - start_time);
+            spdlog::info("send_point: {},time: {},speed: {} point/s", send_num, nowtime() - start_time, v);
+            spdlog::info("Estimated completion time:{} s", (st.size() - send_num) / v);
+            total_send++, total_success++;
             s++, now_token = (now_token + 1) % token_total;
         }
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         spdlog::info("End working, send total: {},success: {},failed: {}", send_num, success_num, fail_num);
         send_num = 0, success_num = 0, fail_num = 0;
     }
